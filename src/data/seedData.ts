@@ -30,7 +30,12 @@ import {
   MissingConditionLog,
   UnfinishedHandoverLog,
   InitialPaymentRecord,
-  LeaseStartEvent
+  LeaseStartEvent,
+  PendingReceptionDoc,
+  TenantChangeProposal,
+  PreSignIdentityVerification,
+  TenantHistoryEntry,
+  ReceptionRequest
 } from '../types';
 
 export const INITIAL_USERS: UserAccount[] = [
@@ -476,6 +481,203 @@ export const INITIAL_CO_TENANTS: CoTenant[] = [
     status: 'Đang cư trú',
     actualArrivalDate: '2026-09-01',
     arrivalVerificationEvidence: 'CCCD đã xác thực'
+  }
+];
+
+export const INITIAL_PENDING_DOCS: PendingReceptionDoc[] = [
+  {
+    id: 'DOC-2026-001',
+    tenantId: 'ten_10',
+    tenantName: 'Nguyễn Quang Khải',
+    docType: 'CCCD gắn chip (Bản gốc)',
+    docNumber: '001099014562',
+    source: 'Tiếp nhận trực tiếp tại văn phòng',
+    receivedDate: '2026-10-14',
+    recordedBy: 'Nguyễn Văn An (Chủ nhà)',
+    status: 'Chờ nhận phòng',
+    notes: 'Giấy tờ giữ để đối chiếu lúc bàn giao chìa khóa tại bước 3.10b (ASIS-03)'
+  },
+  {
+    id: 'DOC-2026-002',
+    tenantId: 'ten_04',
+    tenantName: 'Võ Thị Hồng',
+    docType: 'Giấy khai báo cư trú / Tạm trú',
+    docNumber: 'TT-2026/0401',
+    source: 'Cổng dịch vụ công nộp trực tuyến',
+    receivedDate: '2026-10-12',
+    recordedBy: 'Nguyễn Văn An (Chủ nhà)',
+    status: 'Chờ nhận phòng',
+    notes: 'Bổ sung giấy tờ cho hợp đồng nối tiếp'
+  }
+];
+
+export const INITIAL_RECEPTION_REQUESTS: ReceptionRequest[] = [
+  {
+    requestCode: 'YCTN-2026-001',
+    prospectiveTenantName: 'Nguyễn Quang Khải',
+    prospectivePhone: '0988776655',
+    prospectiveIdNumber: '001099014562',
+    roomCode: 'P.303',
+    conditionsVersion: 'v1.0 (Tiền thuê 3.4tr/tháng, cọc 1 tháng)',
+    status: 'Đã gắn hồ sơ',
+    linkedTenantId: 'ten_10',
+    linkedAt: '2026-10-14T09:15:00Z',
+    linkedBy: 'Nguyễn Văn An (Chủ nhà)',
+    linkHistory: [
+      {
+        timestamp: '2026-10-14T08:30:00Z',
+        action: 'Tiếp nhận nhu cầu thuê',
+        by: 'Nguyễn Văn An (Chủ nhà)',
+        note: 'Cấp mã yêu cầu tiếp nhận bất biến YCTN-2026-001'
+      },
+      {
+        timestamp: '2026-10-14T09:15:00Z',
+        action: 'Liên kết hồ sơ khách (HSKT-01 / AF-07)',
+        by: 'Nguyễn Văn An (Chủ nhà)',
+        note: 'Gắn thành công hồ sơ ten_10 vào mã yêu cầu'
+      }
+    ]
+  },
+  {
+    requestCode: 'YCTN-2026-002',
+    prospectiveTenantName: 'Vũ Đình Toàn',
+    prospectivePhone: '0915667788',
+    prospectiveIdNumber: '030095001234',
+    roomCode: 'P.103',
+    conditionsVersion: 'v1.0 (Tiền thuê 3.2tr/tháng, cọc 1 tháng)',
+    status: 'Chờ gắn hồ sơ',
+    linkHistory: [
+      {
+        timestamp: '2026-10-15T14:00:00Z',
+        action: 'Tiếp nhận nhu cầu thuê',
+        by: 'Nguyễn Văn An (Chủ nhà)',
+        note: 'Cấp mã yêu cầu tiếp nhận bất biến YCTN-2026-002, khách hẹn chiều nộp hồ sơ'
+      }
+    ]
+  },
+  {
+    requestCode: 'YCTN-2026-003',
+    prospectiveTenantName: 'Đoàn Minh Nhật',
+    prospectivePhone: '0944556677',
+    prospectiveIdNumber: '025098007766',
+    roomCode: 'P.202',
+    conditionsVersion: 'v1.1 (Tiền thuê 3.6tr/tháng, cọc 1 tháng)',
+    status: 'Chờ gắn hồ sơ',
+    linkHistory: [
+      {
+        timestamp: '2026-10-16T09:00:00Z',
+        action: 'Tiếp nhận nhu cầu thuê',
+        by: 'Nguyễn Văn An (Chủ nhà)',
+        note: 'Khách đăng ký xem phòng 202 vừa trả hôm qua'
+      }
+    ]
+  }
+];
+
+export const INITIAL_TENANT_PROPOSALS: TenantChangeProposal[] = [
+  {
+    id: 'BDL-2026-001',
+    tenantId: 'ten_01',
+    version: 1,
+    source: 'HSKT-03',
+    currentData: {
+      address: 'Phù Cừ, Hưng Yên'
+    },
+    proposedData: {
+      address: 'Số 12 đường Hoàng Cương, TT. Phù Cừ, Hưng Yên'
+    },
+    evidenceNote: 'Khách nộp bản sao CCCD mới làm lại có chi tiết số nhà cụ thể',
+    verificationResult: 'Đạt',
+    verifiedAt: '2026-10-15T10:00:00Z',
+    verifiedBy: 'Nguyễn Văn An (Chủ nhà)',
+    isTransferredToUpdate: true,
+    transferredAt: '2026-10-15T10:05:00Z',
+    isValid: true
+  },
+  {
+    id: 'BDL-2026-002',
+    tenantId: 'ten_03',
+    version: 1,
+    source: 'HSKT-04',
+    currentData: {
+      phoneNumber: '0903112233'
+    },
+    proposedData: {
+      phoneNumber: '0903998877'
+    },
+    evidenceNote: 'Khách đề nghị đổi SĐT nhận tin nhắn qua ứng dụng Zalo',
+    verificationResult: 'Chưa xác minh',
+    reason: 'Chưa có bản cam kết hoặc đối chiếu trực tiếp sim chính chủ',
+    isTransferredToUpdate: false,
+    isValid: true
+  }
+];
+
+export const INITIAL_PRE_SIGN_VERIFICATIONS: PreSignIdentityVerification[] = [
+  {
+    id: 'PSV-2026-001',
+    tenantId: 'ten_04',
+    contractId: 'HD-203-2026',
+    docType: 'CCCD gắn chip',
+    docNumber: '040197003214',
+    evidence: 'Bản gốc đối chiếu trực tiếp tại văn phòng trước khi ký hợp đồng nối tiếp ASIS-04 bước 4.10',
+    source: 'Tiếp nhận trực tiếp',
+    result: 'Đã xác minh hợp lệ',
+    verifiedAt: '2026-10-14T15:30:00Z',
+    verifiedBy: 'Nguyễn Văn An (Chủ nhà)',
+    purpose: 'Ký hợp đồng ASIS-04 bước 4.10',
+    isValid: true,
+    notes: 'Hồ sơ cá nhân không thay đổi, chỉ đối chiếu điều kiện định danh ký hợp đồng theo BR-HSKT-03-10'
+  }
+];
+
+export const INITIAL_TENANT_HISTORY: TenantHistoryEntry[] = [
+  {
+    id: 'th_01',
+    tenantId: 'ten_01',
+    action: 'Ghi nhận hồ sơ khách mới (UC-HSKT-01)',
+    timestamp: '2026-08-25T09:00:00Z',
+    performedBy: 'Nguyễn Văn An (Chủ nhà)',
+    newValues: 'Khách: Trần Văn Bình, SĐT: 0912345678, CCCD: 001095012345. Đã đối chiếu không trùng.',
+    sourceModule: 'UC-HSKT-01'
+  },
+  {
+    id: 'th_02',
+    tenantId: 'ten_05',
+    action: 'Thêm người ở cùng Đang cư trú (UC-HSKT-02)',
+    timestamp: '2026-07-01T08:30:00Z',
+    performedBy: 'Nguyễn Văn An (Chủ nhà)',
+    relatedLeaseId: 'THUE-301-L1',
+    relatedContractId: 'HD-301-2026',
+    newValues: 'Người ở cùng: Nguyễn Thị Hương (Vợ) & Hoàng Bảo Nam (Con), ngày đến thực tế: 2026-07-01',
+    evidence: 'Đã khai báo tạm trú công an phường',
+    sourceModule: 'UC-HSKT-02'
+  },
+  {
+    id: 'th_03',
+    tenantId: 'ten_01',
+    action: 'Kiểm tra thông tin thay đổi đạt (UC-HSKT-03)',
+    timestamp: '2026-10-15T10:00:00Z',
+    performedBy: 'Nguyễn Văn An (Chủ nhà)',
+    newValues: 'Bộ dữ liệu BDL-2026-001: Địa chỉ mới = Số 12 đường Hoàng Cương, TT. Phù Cừ, Hưng Yên. Kết quả: Đạt.',
+    evidence: 'Bản chụp sổ hộ khẩu/CCCD mới',
+    sourceModule: 'UC-HSKT-03'
+  },
+  {
+    id: 'th_04',
+    tenantId: 'ten_02',
+    action: 'Xác nhận trả phòng & kết thúc cư trú (ASIS-03 3.14)',
+    timestamp: '2026-10-15T16:00:00Z',
+    performedBy: 'Nguyễn Văn An (Chủ nhà)',
+    relatedLeaseId: 'THUE-102-L1',
+    relatedContractId: 'HD-102-2026',
+    actualReturnDate: '2026-10-15',
+    actualLeaseEndDate: '2026-10-15',
+    handoverReturnStatus: 'Đã liên kết phiên bản cuối',
+    handoverVersion: 'BG11-102-v1.0',
+    newValues: 'Phòng P.102: Khách trả phòng thực tế ngày 15/10/2026. Lần thuê và cư trú đồng bộ đóng ngày 15/10/2026.',
+    evidence: 'Biên bản bàn giao trả phòng BB-TR-102 đã ký đầy đủ',
+    sourceModule: 'UC-HSKT-02 / ASIS-03 3.14'
   }
 ];
 

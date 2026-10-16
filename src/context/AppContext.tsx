@@ -37,7 +37,10 @@ import {
   UnfinishedHandoverLog,
   InitialPaymentRecord,
   LeaseStartEvent,
-  ManagementReportSnapshot
+  ManagementReportSnapshot,
+  PendingReceptionDoc,
+  PreSignIdentityVerification,
+  ReceptionRequest
 } from '../types';
 
 import {
@@ -67,7 +70,12 @@ import {
   INITIAL_INITIAL_PAYMENT_RECORDS,
   INITIAL_MISSING_CONDITION_LOGS,
   INITIAL_UNFINISHED_HANDOVER_LOGS,
-  INITIAL_LEASE_START_EVENTS
+  INITIAL_LEASE_START_EVENTS,
+  INITIAL_PENDING_DOCS,
+  INITIAL_RECEPTION_REQUESTS,
+  INITIAL_TENANT_PROPOSALS,
+  INITIAL_PRE_SIGN_VERIFICATIONS,
+  INITIAL_TENANT_HISTORY
 } from '../data/seedData';
 
 interface AppContextType {
@@ -199,16 +207,42 @@ interface AppContextType {
   saveHandoverReturnReportBG11: (report: HandoverReturnReport) => void;
   confirmFinalReturnReportBG11: (reportId: string, tenantSignedStatus: 'Khách đã ký' | 'Khách không ký', notSignReason?: string, notSignExchangeInfo?: string, paperLocation?: string, scanUrl?: string) => { success: boolean; message: string };
 
-  // Tenants (QT03)
+  // Tenants (QT03 - UC-HSKT-01 -> 05)
   tenants: Tenant[];
   coTenants: CoTenant[];
   tenantProposals: TenantChangeProposal[];
   tenantHistory: TenantHistoryEntry[];
-  addTenantHSKT01: (tenant: Omit<Tenant, 'id' | 'createdAt' | 'createdBy'>) => { success: boolean; tenantId?: string; message: string };
-  addCoTenantHSKT02: (coTenant: Omit<CoTenant, 'id'>) => void;
-  updateCoTenantStatusHSKT02: (coTenantId: string, status: 'Đang cư trú' | 'Đã kết thúc', actualDate?: string, evidence?: string) => void;
-  verifyTenantProposalHSKT03: (proposal: TenantChangeProposal) => void;
-  applyTenantUpdateHSKT04: (tenantId: string, updatedFields: Partial<Tenant>) => void;
+  pendingDocs: PendingReceptionDoc[];
+  receptionRequests: ReceptionRequest[];
+  preSignVerifications: PreSignIdentityVerification[];
+
+  // UC-HSKT-01
+  addTenantHSKT01: (tenant: Omit<Tenant, 'id' | 'createdAt' | 'createdBy'>) => {
+    success: boolean;
+    tenantId?: string;
+    isPreliminary?: boolean;
+    warning?: string;
+    message: string;
+  };
+  addPendingReceptionDocHSKT01: (doc: Omit<PendingReceptionDoc, 'id'>) => { success: boolean; message: string };
+  updatePendingReceptionDocStatus: (id: string, status: 'Chờ nhận phòng' | 'Đã đối chiếu tại 3.10b' | 'Đã hoàn trả') => void;
+  linkReceptionRequestHSKT01: (requestCode: string, tenantId: string) => { success: boolean; message: string };
+
+  // UC-HSKT-02
+  addCoTenantHSKT02: (coTenant: Omit<CoTenant, 'id'>) => { success: boolean; id?: string; message: string };
+  updateCoTenantStatusHSKT02: (coTenantId: string, status: 'Nháp' | 'Dự kiến' | 'Đang cư trú' | 'Đã kết thúc', actualDate?: string, evidence?: string) => { success: boolean; message: string };
+  updateCoTenantFieldsHSKT02: (coTenantId: string, fields: Partial<CoTenant>) => { success: boolean; message: string };
+  closeCoTenantResidencyHSKT02: (coTenantId: string, actualReturnDate: string, eventCode: string) => { success: boolean; message: string };
+  linkConsecutiveContractCoTenantHSKT02: (tenantId: string, newContractId: string) => { success: boolean; message: string };
+
+  // UC-HSKT-03
+  createOrUpdateProposalHSKT03: (proposal: Omit<TenantChangeProposal, 'id' | 'version'> & { id?: string; version?: number }) => { success: boolean; proposalId: string; message: string };
+  verifyProposalResultHSKT03: (proposalId: string, result: 'Đạt' | 'Chưa đạt' | 'Chưa xác minh', reason?: string, distinctionBasis?: string) => { success: boolean; message: string };
+  transferProposalToUpdateHSKT03: (proposalId: string) => { success: boolean; message: string };
+  recordPreSignVerificationHSKT03: (verification: Omit<PreSignIdentityVerification, 'id' | 'verifiedAt' | 'verifiedBy' | 'purpose' | 'isValid'>) => { success: boolean; message: string };
+
+  // UC-HSKT-04
+  applyTenantUpdateHSKT04: (tenantId: string, updatedFields: Partial<Tenant>, proposalId?: string) => { success: boolean; message: string };
 
   // Contracts (QT04)
   contracts: Contract[];
@@ -337,8 +371,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [tenants, setTenants] = useState<Tenant[]>(() => getStored('tenants', INITIAL_TENANTS));
   const [coTenants, setCoTenants] = useState<CoTenant[]>(() => getStored('coTenants', INITIAL_CO_TENANTS));
-  const [tenantProposals, setTenantProposals] = useState<TenantChangeProposal[]>(() => getStored('tenantProposals', []));
-  const [tenantHistory, setTenantHistory] = useState<TenantHistoryEntry[]>(() => getStored('tenantHistory', []));
+  const [tenantProposals, setTenantProposals] = useState<TenantChangeProposal[]>(() => getStored('tenantProposals', INITIAL_TENANT_PROPOSALS));
+  const [tenantHistory, setTenantHistory] = useState<TenantHistoryEntry[]>(() => getStored('tenantHistory', INITIAL_TENANT_HISTORY));
+  const [pendingDocs, setPendingDocs] = useState<PendingReceptionDoc[]>(() => getStored('pendingDocs', INITIAL_PENDING_DOCS));
+  const [receptionRequests, setReceptionRequests] = useState<ReceptionRequest[]>(() => getStored('receptionRequests', INITIAL_RECEPTION_REQUESTS));
+  const [preSignVerifications, setPreSignVerifications] = useState<PreSignIdentityVerification[]>(() => getStored('preSignVerifications', INITIAL_PRE_SIGN_VERIFICATIONS));
 
   const [contracts, setContracts] = useState<Contract[]>(() => getStored('contracts', INITIAL_CONTRACTS));
   const [settlementSlips, setSettlementSlips] = useState<DepositSettlementSlip[]>(() => getStored('settlementSlips', INITIAL_SETTLEMENT_SLIPS));
@@ -424,6 +461,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { setStored('coTenants', coTenants); }, [coTenants]);
   useEffect(() => { setStored('tenantProposals', tenantProposals); }, [tenantProposals]);
   useEffect(() => { setStored('tenantHistory', tenantHistory); }, [tenantHistory]);
+  useEffect(() => { setStored('pendingDocs', pendingDocs); }, [pendingDocs]);
+  useEffect(() => { setStored('receptionRequests', receptionRequests); }, [receptionRequests]);
+  useEffect(() => { setStored('preSignVerifications', preSignVerifications); }, [preSignVerifications]);
   useEffect(() => { setStored('contracts', contracts); }, [contracts]);
   useEffect(() => { setStored('batchSchedules', batchSchedules); }, [batchSchedules]);
   useEffect(() => { setStored('settlementSlips', settlementSlips); }, [settlementSlips]);
@@ -1729,64 +1769,592 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, message: 'Chủ nhà đã xác nhận hoàn tất biên bản trả phòng (Bước 3.24) thành công!' };
   };
 
-  // ==================== TENANTS METHODS (QT03) ====================
-  const addTenantHSKT01 = (tenantData: Omit<Tenant, 'id' | 'createdAt' | 'createdBy'>) => {
-    // Check duplicates
-    if (tenantData.idNumber && tenants.some(t => t.idNumber && t.idNumber === tenantData.idNumber)) {
-      return { success: false, message: 'Số định danh CCCD đã tồn tại trong hệ thống.' };
+  // ==================== TENANTS METHODS (QT03 - UC-HSKT-01 -> 05) ====================
+  const addTenantHSKT01 = (tenantData: {
+    fullName: string;
+    phoneNumber: string;
+    idNumber?: string;
+    address?: string;
+    paperStatus: 'Đã cung cấp' | 'Chưa cung cấp';
+    verificationStatus: 'Chưa xác minh' | 'Đã xác minh hợp lệ' | 'Không hợp lệ';
+    isPreliminary?: boolean;
+    verificationReason?: string;
+    requestAdmissionCode?: string;
+    notes?: string;
+    evidencePaperDescription?: string;
+  }) => {
+    const trimmedName = tenantData.fullName?.trim();
+    const trimmedPhone = tenantData.phoneNumber?.trim();
+    const trimmedId = tenantData.idNumber?.trim();
+
+    // EF-01: Thiếu họ tên hoặc thiếu cả liên hệ và định danh
+    if (!trimmedName) {
+      return { success: false, message: 'EF-01: Họ tên khách thuê là trường bắt buộc, không được để trống.' };
     }
-    const newTenant: Tenant = {
-      ...tenantData,
-      id: 'ten_' + Date.now(),
-      createdAt: new Date().toISOString(),
-      createdBy: currentUser?.fullName || 'Chủ nhà'
-    };
-    setTenants(prev => [...prev, newTenant]);
-    logSecurity('TENANT_CREATED', `Created tenant ${newTenant.fullName}`);
-    return { success: true, tenantId: newTenant.id, message: 'Tạo hồ sơ khách thuê thành công!' };
-  };
+    if (!trimmedPhone && !trimmedId) {
+      return { success: false, message: 'EF-01: Phải có ít nhất một thông tin liên hệ (SĐT) hoặc số định danh (CCCD) để đối chiếu.' };
+    }
+    if (!tenantData.paperStatus) {
+      return { success: false, message: 'EF-01: Tình trạng cung cấp giấy tờ là trường bắt buộc (Đã cung cấp / Chưa cung cấp).' };
+    }
 
-  const addCoTenantHSKT02 = (coTenant: Omit<CoTenant, 'id'>) => {
-    const newCoTenant: CoTenant = {
-      ...coTenant,
-      id: 'coten_' + Date.now()
-    };
-    setCoTenants(prev => [...prev, newCoTenant]);
-  };
+    // EF-02: Kiểm tra định dạng SĐT (10 số nếu có nhập)
+    if (trimmedPhone && !/^(0[2-9][0-9]{8})$/.test(trimmedPhone)) {
+      return { success: false, message: 'EF-02: Số điện thoại không đúng định dạng chuẩn (phải gồm 10 chữ số bắt đầu bằng 0).' };
+    }
 
-  const updateCoTenantStatusHSKT02 = (coTenantId: string, status: 'Đang cư trú' | 'Đã kết thúc', actualDate?: string, evidence?: string) => {
-    setCoTenants(prev => prev.map(c => {
-      if (c.id !== coTenantId) return c;
-      if (status === 'Đang cư trú') {
+    // EF-03: Số định danh khớp hồ sơ hiện có
+    if (trimmedId) {
+      const existingById = tenants.find(t => t.idNumber && t.idNumber.toLowerCase() === trimmedId.toLowerCase());
+      if (existingById) {
         return {
-          ...c,
-          status,
-          actualArrivalDate: actualDate || new Date().toISOString().split('T')[0],
-          arrivalVerificationEvidence: evidence || c.arrivalVerificationEvidence
+          success: false,
+          tenantId: existingById.id,
+          message: `EF-03: Số định danh ${trimmedId} trùng khớp với khách "${existingById.fullName}" (${existingById.id}). Đã chặn tạo trùng theo AF-01.`
         };
       }
+    }
+
+    // Nghi trùng theo tên hoặc SĐT (AF-02 / EF-04)
+    const suspectDuplicates = tenants.filter(t =>
+      (trimmedPhone && t.phoneNumber === trimmedPhone) ||
+      (t.fullName.toLowerCase() === trimmedName.toLowerCase())
+    );
+
+    if (suspectDuplicates.length > 0 && !tenantData.verificationReason?.trim()) {
       return {
-        ...c,
-        status,
-        departureDate: actualDate || new Date().toISOString().split('T')[0]
+        success: false,
+        message: `EF-04: Phát hiện nghi trùng với hồ sơ hiện có (${suspectDuplicates.map(s => `${s.fullName} - ${s.id}`).join(', ')}). Bắt buộc nhập căn cứ phân biệt hai người trước khi xác nhận tạo.`
       };
-    }));
+    }
+
+    // BR-HSKT-01-03 & AF-03: Khách chưa cung cấp giấy tờ
+    let finalVerificationStatus = tenantData.verificationStatus;
+    let isPreliminary = false;
+    let warning = '';
+
+    if (tenantData.paperStatus === 'Chưa cung cấp') {
+      finalVerificationStatus = 'Chưa xác minh';
+      isPreliminary = true;
+      warning = 'Hồ sơ sơ bộ: Khách chưa cung cấp giấy tờ định danh. Tuyệt đối không sinh số giả và phải đối chiếu giấy tờ hợp lệ trước khi ký hợp đồng (ASIS-04 bước 4.10).';
+    } else if (tenantData.verificationStatus === 'Không hợp lệ') {
+      // AF-06: Giấy tờ đã đối chiếu Không hợp lệ nhưng họ tên + SĐT hợp lệ
+      if (trimmedPhone) {
+        isPreliminary = true;
+        warning = 'CẢNH BÁO: Giấy tờ đối chiếu KHÔNG HỢP LỆ. Hồ sơ sơ bộ được lưu để theo dõi liên hệ, tuyệt đối không đánh dấu đã xác minh định danh và KHÔNG được dùng để ký hợp đồng.';
+      } else {
+        return { success: false, message: 'EF-02: Giấy tờ không hợp lệ và không có số điện thoại liên hệ hợp lệ thay thế. Bị chặn tạo hồ sơ.' };
+      }
+    }
+
+    // Tạo mã hồ sơ khách duy nhất (BR-HSKT-01-06: Không tạo mã lần thuê ở đây)
+    const newId = 'HK-' + Date.now().toString().slice(-6);
+    const nowIso = new Date().toISOString();
+    const creator = currentUser?.fullName || 'Chủ nhà';
+
+    const newTenant: Tenant = {
+      id: newId,
+      fullName: trimmedName,
+      phoneNumber: trimmedPhone || '',
+      idNumber: trimmedId || undefined,
+      address: tenantData.address?.trim() || undefined,
+      paperStatus: tenantData.paperStatus,
+      verificationStatus: finalVerificationStatus,
+      isPreliminary,
+      preliminaryWarning: warning || undefined,
+      verificationReason: tenantData.verificationReason?.trim() || undefined,
+      requestAdmissionCode: tenantData.requestAdmissionCode || undefined,
+      requestAdmissionLinkedAt: tenantData.requestAdmissionCode ? nowIso : undefined,
+      requestAdmissionLinkedBy: tenantData.requestAdmissionCode ? creator : undefined,
+      evidencePaperDescription: tenantData.evidencePaperDescription?.trim() || undefined,
+      notes: tenantData.notes?.trim() || undefined,
+      version: 1,
+      createdAt: nowIso,
+      createdBy: creator
+    };
+
+    setTenants(prev => [newTenant, ...prev]);
+
+    // Nếu có mã yêu cầu tiếp nhận nguồn (AF-07, BR-HSKT-01-08) -> gắn mã hồ sơ khách vào yêu cầu tiếp nhận
+    if (tenantData.requestAdmissionCode) {
+      setReceptionRequests(prev => prev.map(r => {
+        if (r.requestCode !== tenantData.requestAdmissionCode) return r;
+        return {
+          ...r,
+          status: 'Đã gắn hồ sơ',
+          linkedTenantId: newId,
+          linkedAt: nowIso,
+          linkedBy: creator,
+          linkHistory: [
+            ...(r.linkHistory || []),
+            {
+              timestamp: nowIso,
+              action: 'Liên kết hồ sơ khách mới (AF-07)',
+              by: creator,
+              note: `Gắn hồ sơ ${newTenant.fullName} (${newId}) vào mã yêu cầu bất biến ${r.requestCode}`
+            }
+          ]
+        };
+      }));
+    }
+
+    // Ghi nhật ký lịch sử hồ sơ (BR-HSKT-01-05)
+    setTenantHistory(prev => [{
+      id: 'th_' + Date.now(),
+      tenantId: newId,
+      action: isPreliminary ? 'Tạo hồ sơ sơ bộ (AF-03/AF-06)' : 'Ghi nhận hồ sơ khách mới (UC-HSKT-01)',
+      timestamp: nowIso,
+      performedBy: creator,
+      sourceModule: 'UC-HSKT-01',
+      newValues: `Họ tên: ${newTenant.fullName}, SĐT: ${newTenant.phoneNumber}, Giấy tờ: ${newTenant.paperStatus} (${newTenant.verificationStatus})${warning ? ` [${warning}]` : ''}`
+    }, ...prev]);
+
+    logSecurity('TENANT_CREATED_HSKT01', `Profile ${newId} created for ${newTenant.fullName}. Preliminary: ${isPreliminary}`);
+
+    return {
+      success: true,
+      tenantId: newId,
+      isPreliminary,
+      warning,
+      message: isPreliminary
+        ? `Tạo Hồ sơ sơ bộ thành công (Mã: ${newId}). Lưu ý: ${warning}`
+        : `Ghi nhận hồ sơ khách thuê thành công! Mã hồ sơ: ${newId}`
+    };
   };
 
-  const verifyTenantProposalHSKT03 = (proposal: TenantChangeProposal) => {
-    setTenantProposals(prev => [proposal, ...prev]);
+  const addPendingReceptionDocHSKT01 = (doc: Omit<PendingReceptionDoc, 'id'>) => {
+    const docId = 'DOC-' + Date.now().toString().slice(-6);
+    const newDoc: PendingReceptionDoc = {
+      ...doc,
+      id: docId
+    };
+    setPendingDocs(prev => [newDoc, ...prev]);
+    setTenantHistory(prev => [{
+      id: 'th_' + Date.now(),
+      tenantId: doc.tenantId,
+      action: 'Tiếp nhận giấy tờ chờ nhận phòng (ASIS-03 3.10c / AF-05)',
+      timestamp: new Date().toISOString(),
+      performedBy: doc.recordedBy,
+      sourceModule: 'UC-HSKT-01 / AF-05',
+      evidence: `${doc.docType} (${doc.docNumber || 'Không có số'})`,
+      newValues: `Nguồn: ${doc.source}, Ngày nhận: ${doc.receivedDate}, Trạng thái: ${doc.status}`
+    }, ...prev]);
+    return { success: true, message: `Lưu giấy tờ chờ nhận phòng thành công (Mã: ${docId}).` };
   };
 
-  const applyTenantUpdateHSKT04 = (tenantId: string, updatedFields: Partial<Tenant>) => {
-    setTenants(prev => prev.map(t => t.id === tenantId ? { ...t, ...updatedFields } : t));
+  const updatePendingReceptionDocStatus = (id: string, status: 'Chờ nhận phòng' | 'Đã đối chiếu tại 3.10b' | 'Đã hoàn trả') => {
+    setPendingDocs(prev => prev.map(d => d.id === id ? { ...d, status } : d));
+  };
+
+  const linkReceptionRequestHSKT01 = (requestCode: string, tenantId: string) => {
+    const tenant = tenants.find(t => t.id === tenantId);
+    if (!tenant) return { success: false, message: 'Không tìm thấy hồ sơ khách để liên kết.' };
+    const request = receptionRequests.find(r => r.requestCode === requestCode);
+    if (!request) return { success: false, message: 'Không tìm thấy mã yêu cầu tiếp nhận nguồn.' };
+
+    const nowIso = new Date().toISOString();
+    const creator = currentUser?.fullName || 'Chủ nhà';
+
+    setTenants(prev => prev.map(t => t.id === tenantId ? {
+      ...t,
+      requestAdmissionCode: requestCode,
+      requestAdmissionLinkedAt: nowIso,
+      requestAdmissionLinkedBy: creator
+    } : t));
+
+    setReceptionRequests(prev => prev.map(r => r.requestCode === requestCode ? {
+      ...r,
+      status: 'Đã gắn hồ sơ',
+      linkedTenantId: tenantId,
+      linkedAt: nowIso,
+      linkedBy: creator,
+      linkHistory: [
+        ...(r.linkHistory || []),
+        {
+          timestamp: nowIso,
+          action: 'Liên kết hồ sơ khách (AF-07)',
+          by: creator,
+          note: `Gắn hồ sơ ${tenant.fullName} (${tenantId}) vào yêu cầu bất biến ${requestCode}`
+        }
+      ]
+    } : r));
+
     setTenantHistory(prev => [{
       id: 'th_' + Date.now(),
       tenantId,
-      action: 'Cập nhật thông tin khách thuê',
+      action: 'Liên kết mã yêu cầu tiếp nhận (AF-07)',
+      timestamp: nowIso,
+      performedBy: creator,
+      sourceModule: 'UC-HSKT-01 / AF-07',
+      newValues: `Mã yêu cầu: ${requestCode}, Phòng yêu cầu: ${request.roomCode}, Phiên bản điều kiện: ${request.conditionsVersion}`
+    }, ...prev]);
+
+    return { success: true, message: `Liên kết thành công mã yêu cầu ${requestCode} với hồ sơ khách ${tenant.fullName} (${tenantId})!` };
+  };
+
+  // ==================== CO-TENANT METHODS (UC-HSKT-02) ====================
+  const addCoTenantHSKT02 = (coTenant: Omit<CoTenant, 'id'>) => {
+    // EF-02: Kiểm tra tối thiểu tên và quan hệ
+    if (!coTenant.fullName?.trim()) {
+      return { success: false, message: 'EF-02: Họ tên người ở cùng là trường bắt buộc.' };
+    }
+    if (!coTenant.relationship?.trim()) {
+      return { success: false, message: 'EF-02: Quan hệ với khách chính là trường bắt buộc.' };
+    }
+
+    // Đang cư trú: kiểm tra ngày đến thực tế & căn cứ (EF-02, EF-07)
+    if (coTenant.status === 'Đang cư trú') {
+      if (!coTenant.actualArrivalDate) {
+        return { success: false, message: 'EF-07: Chuyển sang Đang cư trú bắt buộc phải có Ngày đến thực tế.' };
+      }
+      if (!coTenant.arrivalVerificationEvidence?.trim()) {
+        return { success: false, message: 'EF-07: Chuyển sang Đang cư trú bắt buộc phải có Căn cứ xác nhận (giấy tờ tạm trú/khai báo).' };
+      }
+      // EF-03: Kiểm tra chồng lấn khoảng cư trú nếu cùng số định danh
+      if (coTenant.idNumber) {
+        const overlap = coTenants.find(c =>
+          c.idNumber === coTenant.idNumber &&
+          c.status === 'Đang cư trú'
+        );
+        if (overlap) {
+          return {
+            success: false,
+            message: `EF-03: Người có số định danh ${coTenant.idNumber} đang cư trú tại phòng ${overlap.roomCode || 'khác'}. Không thể cư trú chồng lấn.`
+          };
+        }
+      }
+    }
+
+    const coId = 'coten_' + Date.now();
+    const newCoTenant: CoTenant = {
+      ...coTenant,
+      id: coId,
+      syncStatus: 'Đã đồng bộ'
+    };
+    setCoTenants(prev => [...prev, newCoTenant]);
+
+    if (coTenant.tenantId && coTenant.tenantId !== 'DRAFT') {
+      setTenantHistory(prev => [{
+        id: 'th_' + Date.now(),
+        tenantId: coTenant.tenantId,
+        action: `Thêm người ở cùng [${coTenant.status}] (UC-HSKT-02)`,
+        timestamp: new Date().toISOString(),
+        performedBy: currentUser?.fullName || 'Chủ nhà',
+        sourceModule: 'UC-HSKT-02',
+        relatedLeaseId: coTenant.leaseId,
+        relatedContractId: coTenant.contractId,
+        newValues: `${coTenant.fullName} (${coTenant.relationship}) - Trạng thái: ${coTenant.status}${coTenant.actualArrivalDate ? `, Ngày đến thực tế: ${coTenant.actualArrivalDate}` : ''}`,
+        evidence: coTenant.arrivalVerificationEvidence
+      }, ...prev]);
+    }
+
+    return { success: true, id: coId, message: `Thêm người ở cùng (${coTenant.fullName}) trạng thái [${coTenant.status}] thành công!` };
+  };
+
+  const updateCoTenantStatusHSKT02 = (
+    coTenantId: string,
+    status: 'Nháp' | 'Dự kiến' | 'Đang cư trú' | 'Đã kết thúc',
+    actualDate?: string,
+    evidence?: string
+  ) => {
+    const target = coTenants.find(c => c.id === coTenantId);
+    if (!target) return { success: false, message: 'Không tìm thấy người ở cùng.' };
+
+    if (status === 'Đang cư trú') {
+      if (!actualDate && !target.actualArrivalDate) {
+        return { success: false, message: 'EF-07: Chuyển Đang cư trú bắt buộc phải nhập Ngày đến thực tế.' };
+      }
+      if (!evidence?.trim() && !target.arrivalVerificationEvidence?.trim()) {
+        return { success: false, message: 'EF-07: Chuyển Đang cư trú bắt buộc phải có Căn cứ xác nhận cư trú.' };
+      }
+    }
+
+    if (status === 'Đã kết thúc') {
+      const departure = actualDate || new Date().toISOString().split('T')[0];
+      if (target.actualArrivalDate && departure < target.actualArrivalDate) {
+        return { success: false, message: 'EF-03: Ngày kết thúc cư trú không được trước ngày bắt đầu cư trú thực tế.' };
+      }
+    }
+
+    setCoTenants(prev => prev.map(c => {
+      if (c.id !== coTenantId) return c;
+      return {
+        ...c,
+        status,
+        actualArrivalDate: status === 'Đang cư trú' ? (actualDate || c.actualArrivalDate || new Date().toISOString().split('T')[0]) : c.actualArrivalDate,
+        arrivalVerificationEvidence: evidence || c.arrivalVerificationEvidence,
+        departureDate: status === 'Đã kết thúc' ? (actualDate || new Date().toISOString().split('T')[0]) : c.departureDate
+      };
+    }));
+
+    if (target.tenantId && target.tenantId !== 'DRAFT') {
+      setTenantHistory(prev => [{
+        id: 'th_' + Date.now(),
+        tenantId: target.tenantId,
+        action: `Cập nhật trạng thái người ở cùng -> ${status} (UC-HSKT-02)`,
+        timestamp: new Date().toISOString(),
+        performedBy: currentUser?.fullName || 'Chủ nhà',
+        sourceModule: 'UC-HSKT-02',
+        relatedLeaseId: target.leaseId,
+        relatedContractId: target.contractId,
+        oldValues: `Trạng thái: ${target.status}`,
+        newValues: `Trạng thái: ${status}${actualDate ? `, Ngày: ${actualDate}` : ''}`,
+        evidence
+      }, ...prev]);
+    }
+
+    return { success: true, message: `Cập nhật trạng thái cư trú của ${target.fullName} thành [${status}] thành công!` };
+  };
+
+  const updateCoTenantFieldsHSKT02 = (coTenantId: string, fields: Partial<CoTenant>) => {
+    const target = coTenants.find(c => c.id === coTenantId);
+    if (!target) return { success: false, message: 'Không tìm thấy người ở cùng.' };
+
+    setCoTenants(prev => prev.map(c => c.id === coTenantId ? { ...c, ...fields } : c));
+
+    if (target.tenantId && target.tenantId !== 'DRAFT') {
+      setTenantHistory(prev => [{
+        id: 'th_' + Date.now(),
+        tenantId: target.tenantId,
+        action: 'Cập nhật thông tin người ở cùng trong kỳ thuê (AF-01.1)',
+        timestamp: new Date().toISOString(),
+        performedBy: currentUser?.fullName || 'Chủ nhà',
+        sourceModule: 'UC-HSKT-02 / AF-01',
+        newValues: JSON.stringify(fields)
+      }, ...prev]);
+    }
+
+    return { success: true, message: `Cập nhật thông tin người ở cùng ${target.fullName} thành công!` };
+  };
+
+  const closeCoTenantResidencyHSKT02 = (coTenantId: string, actualReturnDate: string, eventCode: string) => {
+    const target = coTenants.find(c => c.id === coTenantId);
+    if (!target) return { success: false, message: 'Không tìm thấy người ở cùng.' };
+
+    setCoTenants(prev => prev.map(c => c.id === coTenantId ? {
+      ...c,
+      status: 'Đã kết thúc',
+      departureDate: actualReturnDate,
+      checkoutEventId: eventCode,
+      syncStatus: 'Đã đồng bộ'
+    } : c));
+
+    if (target.tenantId && target.tenantId !== 'DRAFT') {
+      setTenantHistory(prev => [{
+        id: 'th_' + Date.now(),
+        tenantId: target.tenantId,
+        action: 'Đóng cư trú theo ngày nhận lại thực tế (ASIS-03 3.14 / AF-03)',
+        timestamp: new Date().toISOString(),
+        performedBy: currentUser?.fullName || 'Chủ nhà',
+        sourceModule: 'UC-HSKT-02 / 3.14',
+        relatedLeaseId: target.leaseId,
+        actualReturnDate,
+        actualLeaseEndDate: actualReturnDate,
+        newValues: `${target.fullName} kết thúc cư trú ngày ${actualReturnDate} theo sự kiện bàn giao trả ${eventCode}`
+      }, ...prev]);
+    }
+
+    return { success: true, message: `Đã đóng cư trú của ${target.fullName} theo ngày nhận lại thực tế ${actualReturnDate}.` };
+  };
+
+  const linkConsecutiveContractCoTenantHSKT02 = (tenantId: string, newContractId: string) => {
+    setCoTenants(prev => prev.map(c => {
+      if (c.tenantId !== tenantId || c.status !== 'Đang cư trú') return c;
+      return {
+        ...c,
+        contractId: newContractId,
+        consecutiveChainLinked: true
+      };
+    }));
+
+    setTenantHistory(prev => [{
+      id: 'th_' + Date.now(),
+      tenantId,
+      action: 'Nối tiếp chuỗi cư trú sang hợp đồng gia hạn (AF-04 / BR-HSKT02-04)',
       timestamp: new Date().toISOString(),
       performedBy: currentUser?.fullName || 'Chủ nhà',
-      newValues: JSON.stringify(updatedFields)
+      sourceModule: 'UC-HSKT-02 / AF-04',
+      relatedContractId: newContractId,
+      newValues: `Tự động liên kết hợp đồng mới ${newContractId} vào chuỗi cư trú đang mở, không tạo trùng người và không đóng người cũ.`
     }, ...prev]);
+
+    return { success: true, message: `Liên kết hợp đồng gia hạn ${newContractId} vào chuỗi cư trú thành công!` };
+  };
+
+  // ==================== PROPOSALS & PRE-SIGN (UC-HSKT-03) ====================
+  const createOrUpdateProposalHSKT03 = (proposal: Omit<TenantChangeProposal, 'id' | 'version'> & { id?: string; version?: number }) => {
+    const propId = proposal.id || 'BDL-' + Date.now().toString().slice(-6);
+    const version = (proposal.version || 0) + 1;
+
+    const newProposal: TenantChangeProposal = {
+      ...proposal,
+      id: propId,
+      version,
+      isValid: true,
+      verificationResult: proposal.verificationResult || 'Chưa xác minh'
+    };
+
+    setTenantProposals(prev => {
+      const idx = prev.findIndex(p => p.id === propId);
+      if (idx >= 0) {
+        const u = [...prev];
+        u[idx] = newProposal;
+        return u;
+      }
+      return [newProposal, ...prev];
+    });
+
+    return { success: true, proposalId: propId, message: `Lưu bộ dữ liệu đề nghị thay đổi [${propId} v${version}] thành công!` };
+  };
+
+  const verifyProposalResultHSKT03 = (
+    proposalId: string,
+    result: 'Đạt' | 'Chưa đạt' | 'Chưa xác minh',
+    reason?: string,
+    distinctionBasis?: string
+  ) => {
+    const target = tenantProposals.find(p => p.id === proposalId);
+    if (!target) return { success: false, message: 'Không tìm thấy bộ dữ liệu đề nghị thay đổi.' };
+
+    const nowIso = new Date().toISOString();
+    const verifier = currentUser?.fullName || 'Chủ nhà';
+
+    setTenantProposals(prev => prev.map(p => {
+      if (p.id !== proposalId) return p;
+      return {
+        ...p,
+        verificationResult: result,
+        verifiedAt: nowIso,
+        verifiedBy: verifier,
+        reason,
+        distinctionBasis,
+        isValid: true
+      };
+    }));
+
+    setTenantHistory(prev => [{
+      id: 'th_' + Date.now(),
+      tenantId: target.tenantId,
+      action: `Kiểm tra đề nghị thay đổi -> ${result} (UC-HSKT-03)`,
+      timestamp: nowIso,
+      performedBy: verifier,
+      sourceModule: 'UC-HSKT-03',
+      evidence: target.evidenceNote,
+      newValues: `Bộ ${proposalId} (v${target.version}): Kết quả = ${result}${reason ? `. Lý do: ${reason}` : ''}${distinctionBasis ? `. Căn cứ phân biệt: ${distinctionBasis}` : ''}`
+    }, ...prev]);
+
+    return { success: true, message: `Xác nhận kết quả kiểm tra [${result}] cho bộ dữ liệu ${proposalId} thành công!` };
+  };
+
+  const transferProposalToUpdateHSKT03 = (proposalId: string) => {
+    const target = tenantProposals.find(p => p.id === proposalId);
+    if (!target) return { success: false, message: 'Không tìm thấy bộ dữ liệu đề nghị thay đổi.' };
+    if (target.verificationResult !== 'Đạt' || !target.isValid) {
+      return { success: false, message: 'Chỉ bộ dữ liệu có kết quả ĐẠT và còn hiệu lực mới được chuyển sang HSKT-04 cập nhật.' };
+    }
+
+    setTenantProposals(prev => prev.map(p => p.id === proposalId ? {
+      ...p,
+      isTransferredToUpdate: true,
+      transferredAt: new Date().toISOString()
+    } : p));
+
+    return { success: true, message: `Đã chuyển nguyên bộ dữ liệu ${proposalId} sang HSKT-04 để cập nhật!` };
+  };
+
+  const recordPreSignVerificationHSKT03 = (verification: Omit<PreSignIdentityVerification, 'id' | 'verifiedAt' | 'verifiedBy' | 'purpose' | 'isValid'>) => {
+    const verId = 'PSV-' + Date.now().toString().slice(-6);
+    const nowIso = new Date().toISOString();
+    const verifier = currentUser?.fullName || 'Chủ nhà';
+
+    const newRecord: PreSignIdentityVerification = {
+      ...verification,
+      id: verId,
+      verifiedAt: nowIso,
+      verifiedBy: verifier,
+      purpose: 'Ký hợp đồng ASIS-04 bước 4.10',
+      isValid: true
+    };
+
+    setPreSignVerifications(prev => [newRecord, ...prev]);
+
+    setTenantHistory(prev => [{
+      id: 'th_' + Date.now(),
+      tenantId: verification.tenantId,
+      action: 'Đối chiếu định danh khách cũ trước ký hợp đồng (AF-06 / BR-HSKT-03-10)',
+      timestamp: nowIso,
+      performedBy: verifier,
+      sourceModule: 'UC-HSKT-03 / AF-06',
+      relatedContractId: verification.contractId,
+      evidence: `${verification.docType} (${verification.docNumber}): ${verification.evidence}`,
+      newValues: `Kết quả đối chiếu: ${verification.result}. Không phát sinh thay đổi trường hồ sơ cá nhân.`
+    }, ...prev]);
+
+    return { success: true, message: `Ghi nhận đối chiếu định danh trước ký [${verification.result}] thành công (Mã: ${verId})!` };
+  };
+
+  // ==================== APPLY UPDATE (UC-HSKT-04) ====================
+  const applyTenantUpdateHSKT04 = (tenantId: string, updatedFields: Partial<Tenant>, proposalId?: string) => {
+    const tenant = tenants.find(t => t.id === tenantId);
+    if (!tenant) return { success: false, message: 'EF-01: Không tìm thấy hồ sơ khách để cập nhật.' };
+
+    // Kiểm tra kết quả HSKT-03 Đạt còn hiệu lực (BR-HSKT-04-02)
+    if (proposalId) {
+      const proposal = tenantProposals.find(p => p.id === proposalId);
+      if (!proposal) {
+        return { success: false, message: 'EF-02: Không tìm thấy bộ dữ liệu đề nghị thay đổi tương ứng.' };
+      }
+      if (proposal.verificationResult !== 'Đạt' || !proposal.isValid) {
+        return { success: false, message: 'EF-02: Bộ dữ liệu chưa đạt kết quả ĐẠT hoặc đã bị vô hiệu do thay đổi sau kiểm tra. Bắt buộc kiểm tra lại tại HSKT-03.' };
+      }
+    }
+
+    // AF-03: Kiểm tra không có thay đổi thực tế
+    let hasActualChange = false;
+    const oldValuesObj: Record<string, any> = {};
+    const newValuesObj: Record<string, any> = {};
+
+    for (const key of Object.keys(updatedFields) as (keyof Tenant)[]) {
+      if (updatedFields[key] !== undefined && (tenant as any)[key] !== (updatedFields as any)[key]) {
+        hasActualChange = true;
+        oldValuesObj[key] = (tenant as any)[key];
+        newValuesObj[key] = (updatedFields as any)[key];
+      }
+    }
+
+    if (!hasActualChange) {
+      return { success: false, message: 'AF-03: Dữ liệu mới hoàn toàn trùng khớp với hồ sơ hiện tại. Không có thay đổi thực tế để cập nhật.' };
+    }
+
+    // Cập nhật hồ sơ gốc
+    const nowIso = new Date().toISOString();
+    const updater = currentUser?.fullName || 'Chủ nhà';
+    const newVersion = (tenant.version || 1) + 1;
+
+    setTenants(prev => prev.map(t => {
+      if (t.id !== tenantId) return t;
+      return {
+        ...t,
+        ...updatedFields,
+        version: newVersion
+      };
+    }));
+
+    // Ghi nhật ký trước/sau đầy đủ (BR-HSKT-04-05)
+    setTenantHistory(prev => [{
+      id: 'th_' + Date.now(),
+      tenantId,
+      action: 'Cập nhật hồ sơ khách thuê thành công (UC-HSKT-04)',
+      timestamp: nowIso,
+      performedBy: updater,
+      sourceModule: 'UC-HSKT-04',
+      oldValues: JSON.stringify(oldValuesObj),
+      newValues: JSON.stringify(newValuesObj)
+    }, ...prev]);
+
+    logSecurity('TENANT_UPDATED_HSKT04', `Updated tenant ${tenantId} to v${newVersion} by ${updater}`);
+
+    return { success: true, message: `Cập nhật hồ sơ khách thuê (${tenant.fullName}) thành công (v${newVersion})!` };
   };
 
   // ==================== CONTRACTS (QT04) ====================
@@ -2665,10 +3233,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       coTenants,
       tenantProposals,
       tenantHistory,
+      pendingDocs,
+      receptionRequests,
+      preSignVerifications,
       addTenantHSKT01,
+      addPendingReceptionDocHSKT01,
+      updatePendingReceptionDocStatus,
+      linkReceptionRequestHSKT01,
       addCoTenantHSKT02,
       updateCoTenantStatusHSKT02,
-      verifyTenantProposalHSKT03,
+      updateCoTenantFieldsHSKT02,
+      closeCoTenantResidencyHSKT02,
+      linkConsecutiveContractCoTenantHSKT02,
+      createOrUpdateProposalHSKT03,
+      verifyProposalResultHSKT03,
+      transferProposalToUpdateHSKT03,
+      recordPreSignVerificationHSKT03,
       applyTenantUpdateHSKT04,
 
       contracts,

@@ -463,24 +463,46 @@ export interface HandoverReturnReport {
 
 // ==================== QUY TRÌNH 03: HỒ SƠ KHÁCH THUÊ ====================
 export interface Tenant {
-  id: string; // Mã hồ sơ khách
+  id: string; // Mã hồ sơ khách (HK-xxxx hoặc ten_xx)
   fullName: string;
   phoneNumber: string;
   idNumber?: string;
   address?: string;
-  paperStatus: 'Đã cung cấp' | 'Chưa cung cấp';
-  verificationStatus: 'Chưa xác minh' | 'Đã xác minh hợp lệ' | 'Không hợp lệ';
-  requestAdmissionCode?: string; // Mã yêu cầu tiếp nhận
+  paperStatus: 'Đã cung cấp' | 'Chưa cung cấp'; // TÌNH TRẠNG CUNG CẤP tách riêng
+  verificationStatus: 'Chưa xác minh' | 'Đã xác minh hợp lệ' | 'Không hợp lệ'; // KẾT QUẢ XÁC MINH riêng
+  isPreliminary?: boolean; // Cờ hồ sơ sơ bộ
+  preliminaryWarning?: string; // Cảnh báo giấy tờ không hợp lệ hoặc thiếu giấy tờ
+  verificationReason?: string; // Căn cứ phân biệt nghi trùng hoặc ghi nhận sơ bộ
+  requestAdmissionCode?: string; // Mã yêu cầu tiếp nhận nguồn bất biến
+  requestAdmissionLinkedAt?: string;
+  requestAdmissionLinkedBy?: string;
+  evidencePaperDescription?: string;
+  version?: number;
   notes?: string;
   createdAt: string;
   createdBy: string;
 }
 
-export interface CoTenant {
+export interface PendingReceptionDoc {
   id: string;
   tenantId: string;
+  tenantName: string;
+  docType: string;
+  docNumber?: string;
+  source: string;
+  receivedDate: string;
+  recordedBy: string;
+  status: 'Chờ nhận phòng' | 'Đã đối chiếu tại 3.10b' | 'Đã hoàn trả';
+  notes?: string;
+}
+
+export interface CoTenant {
+  id: string;
+  tenantId: string; // Gắn hồ sơ khách chính sau bước 3.10
+  incomingTenantName?: string; // Tên khách đang tiếp nhận khi còn Nháp ở 3.9
   roomCode?: string;
-  leaseId?: string;
+  leaseId?: string; // Mã lần thuê từ sự kiện nguồn
+  contractId?: string;
   fullName: string;
   idNumber?: string;
   relationship: string;
@@ -489,18 +511,44 @@ export interface CoTenant {
   actualArrivalDate?: string;
   departureDate?: string;
   arrivalVerificationEvidence?: string;
+  syncStatus?: 'Đã đồng bộ' | 'Chờ đồng bộ';
+  checkoutEventId?: string;
+  consecutiveChainLinked?: boolean;
+  notes?: string;
 }
 
 export interface TenantChangeProposal {
-  id: string;
+  id: string; // Mã bộ dữ liệu đề nghị thay đổi dùng chung (BDL-xxx)
   tenantId: string;
   version: number;
+  source: 'HSKT-03' | 'HSKT-04';
   proposedData: Partial<Tenant>;
+  currentData?: Partial<Tenant>;
   evidenceNote: string;
   verificationResult: 'Đạt' | 'Chưa đạt' | 'Chưa xác minh';
   verifiedAt?: string;
   verifiedBy?: string;
   reason?: string;
+  distinctionBasis?: string; // Căn cứ phân biệt nghi trùng khác người (AF-04)
+  isTransferredToUpdate?: boolean; // Đã chuyển sang HSKT-04
+  transferredAt?: string;
+  isValid?: boolean; // Còn hiệu lực hay đã bị vô hiệu do chỉnh sửa sau kiểm tra
+}
+
+export interface PreSignIdentityVerification {
+  id: string;
+  tenantId: string;
+  contractId?: string;
+  docType: string;
+  docNumber: string;
+  evidence: string;
+  source: string;
+  result: 'Đã xác minh hợp lệ' | 'Chưa xác minh' | 'Không hợp lệ';
+  verifiedAt: string;
+  verifiedBy: string;
+  notes?: string;
+  purpose: 'Ký hợp đồng ASIS-04 bước 4.10';
+  isValid: boolean;
 }
 
 export interface TenantHistoryEntry {
@@ -512,6 +560,32 @@ export interface TenantHistoryEntry {
   oldValues?: string;
   newValues?: string;
   relatedLeaseId?: string;
+  relatedContractId?: string;
+  evidence?: string;
+  sourceModule?: string;
+  handoverReturnStatus?: 'Chờ bổ sung phiên bản cuối' | 'Đã liên kết phiên bản cuối' | 'Không có';
+  handoverVersion?: string; // Mã phiên bản BG11
+  actualReturnDate?: string; // Ngày nhận lại phòng thực tế (3.04/3.05)
+  actualLeaseEndDate?: string; // Ngày kết thúc lần thuê thực tế (PH-04)
+}
+
+export interface ReceptionRequest {
+  requestCode: string; // Mã yêu cầu bất biến từ ASIS-04, vd: YCTN-2026-001
+  prospectiveTenantName: string;
+  prospectivePhone: string;
+  prospectiveIdNumber?: string;
+  roomCode: string;
+  conditionsVersion: string;
+  status: 'Chờ gắn hồ sơ' | 'Đã gắn hồ sơ' | 'Đã tạo hợp đồng' | 'Đã dừng';
+  linkedTenantId?: string;
+  linkedAt?: string;
+  linkedBy?: string;
+  linkHistory?: {
+    timestamp: string;
+    action: string;
+    by: string;
+    note: string;
+  }[];
 }
 
 // ==================== QUY TRÌNH 04: HỢP ĐỒNG THUÊ ====================
