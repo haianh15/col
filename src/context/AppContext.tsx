@@ -40,7 +40,8 @@ import {
   ManagementReportSnapshot,
   PendingReceptionDoc,
   PreSignIdentityVerification,
-  ReceptionRequest
+  ReceptionRequest,
+  LeaseConditionDraft
 } from '../types';
 
 import {
@@ -73,6 +74,7 @@ import {
   INITIAL_LEASE_START_EVENTS,
   INITIAL_PENDING_DOCS,
   INITIAL_RECEPTION_REQUESTS,
+  INITIAL_LEASE_CONDITIONS,
   INITIAL_TENANT_PROPOSALS,
   INITIAL_PRE_SIGN_VERIFICATIONS,
   INITIAL_TENANT_HISTORY
@@ -244,12 +246,22 @@ interface AppContextType {
   // UC-HSKT-04
   applyTenantUpdateHSKT04: (tenantId: string, updatedFields: Partial<Tenant>, proposalId?: string) => { success: boolean; message: string };
 
-  // Contracts (QT04)
+  // Contracts & Lease Conditions (QT04 / ASIS-04)
+  leaseConditions: LeaseConditionDraft[];
+  saveLeaseConditionHDT01: (condition: Omit<LeaseConditionDraft, 'id' | 'createdAt' | 'createdBy' | 'updatedAt' | 'updatedBy' | 'version'> & { id?: string }) => { success: boolean; conditionId: string; version: number; message: string };
+  checkLeaseConditionHDT01: (condition: Partial<LeaseConditionDraft>) => { isValid: boolean; roomAvailable: boolean; batchConfirmed: boolean; blockingErrors: string[]; warnings: string[] };
+  updateLeaseConditionStatusHDT01: (requestCode: string, agreed: boolean, note?: string) => { success: boolean; message: string };
+  cancelLeaseConditionHDT01: (requestCode: string, reason: string) => { success: boolean; message: string };
+
   contracts: Contract[];
   batchSchedules: BatchSchedule[];
   addBatchSchedule: (batch: BatchSchedule) => void;
+  updateBatchScheduleHDT05: (batchCode: string, updates: Partial<BatchSchedule>) => { success: boolean; message: string };
   createContractDraftHDT02: (contract: Omit<Contract, 'id' | 'status' | 'isSignedPaper' | 'version'>) => { success: boolean; contractId?: string; message: string };
-  confirmContractSignedHDT04: (contractId: string, signedDate: string, proofFiles: string[]) => { success: boolean; message: string };
+  updateContractDraftHDT03: (contractId: string, updates: Partial<Contract>, changeNote: string) => { success: boolean; message: string };
+  sendContractToTenantHDT03: (contractId: string) => { success: boolean; message: string };
+  cancelContractDraftHDT03: (contractId: string, reason: string) => { success: boolean; message: string };
+  confirmContractSignedHDT04: (contractId: string, signedDate: string, proofFiles: string[], verifyInfo?: { idNumber: string; proof: string; confirmVerified: boolean }) => { success: boolean; message: string };
   createRenewalContractHDT06: (params: {
     previousContractId: string;
     roomCode: string;
@@ -376,6 +388,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [pendingDocs, setPendingDocs] = useState<PendingReceptionDoc[]>(() => getStored('pendingDocs', INITIAL_PENDING_DOCS));
   const [receptionRequests, setReceptionRequests] = useState<ReceptionRequest[]>(() => getStored('receptionRequests', INITIAL_RECEPTION_REQUESTS));
   const [preSignVerifications, setPreSignVerifications] = useState<PreSignIdentityVerification[]>(() => getStored('preSignVerifications', INITIAL_PRE_SIGN_VERIFICATIONS));
+  const [leaseConditions, setLeaseConditions] = useState<LeaseConditionDraft[]>(() => getStored('leaseConditions', INITIAL_LEASE_CONDITIONS));
 
   const [contracts, setContracts] = useState<Contract[]>(() => getStored('contracts', INITIAL_CONTRACTS));
   const [settlementSlips, setSettlementSlips] = useState<DepositSettlementSlip[]>(() => getStored('settlementSlips', INITIAL_SETTLEMENT_SLIPS));
@@ -464,6 +477,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { setStored('pendingDocs', pendingDocs); }, [pendingDocs]);
   useEffect(() => { setStored('receptionRequests', receptionRequests); }, [receptionRequests]);
   useEffect(() => { setStored('preSignVerifications', preSignVerifications); }, [preSignVerifications]);
+  useEffect(() => { setStored('leaseConditions', leaseConditions); }, [leaseConditions]);
   useEffect(() => { setStored('contracts', contracts); }, [contracts]);
   useEffect(() => { setStored('batchSchedules', batchSchedules); }, [batchSchedules]);
   useEffect(() => { setStored('settlementSlips', settlementSlips); }, [settlementSlips]);
@@ -2370,41 +2384,562 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const updateBatchScheduleHDT05 = (batchCode: string, updates: Partial<BatchSchedule>) => {
+    setBatchSchedules(prev => prev.map(b => {
+      if (b.batchCode === batchCode) {
+        return { ...b, ...updates };
+      }
+      return b;
+    }));
+    logSecurity('BATCH_SCHEDULE_UPDATED', `Batch schedule ${batchCode} updated`);
+    return { success: true, message: 'Cập nhật lịch đợt hợp đồng chung thành công!' };
+  };
+
+  // ==================== UC-HDT-01: ĐIỀU CHỈNH ĐIỀU KIỆN THUÊ (4.4a → 4.5) ====================
+  const checkLeaseConditionHDT01 = (condition: Partial<LeaseConditionDraft>) => {
+    const blockingErrors: string[] = [];
+    const warnings: string[] = [];
+
+    // 1. Kiểm tra phòng
+    if (!condition.roomCode) {
+      blockingErrors.push('Chưa chọn phòng dự kiến');
+    } else {
+      const room = rooms.find(r => r.roomCode === condition.roomCode);
+      if (!room) {
+        blockingErrors.push(`Không tìm thấy phòng ${condition.roomCode}`);
+      }
+
+      // So trùng lịch hợp đồng đã ký
+      if (condition.startDate && condition.endDate) {
+        const condStart = new Date(condition.startDate).getTime();
+        const condEnd = new Date(condition.endDate).getTime();
+
+        const overlappingContract = contracts.find(c => {
+          if (c.roomCode !== condition.roomCode) return false;
+          if (c.status !== 'Hiệu lực' && c.status !== 'Chờ hiệu lực') return false;
+          const cStart = new Date(c.startDate).getTime();
+          const cEnd = new Date(c.endDate).getTime();
+          return (condStart < cEnd && condEnd > cStart);
+        });
+
+        if (overlappingContract) {
+          blockingErrors.push(`Lỗi chặn ký: Phòng ${condition.roomCode} đã có hợp đồng hiệu lực ${overlappingContract.id} (${overlappingContract.startDate} → ${overlappingContract.endDate})`);
+        }
+      }
+    }
+
+    // 2. Kiểm tra đợt chung
+    if (!condition.batchCode) {
+      blockingErrors.push('Chưa chọn đợt hợp đồng chung');
+    } else {
+      const batch = batchSchedules.find(b => b.batchCode === condition.batchCode);
+      if (!batch) {
+        blockingErrors.push(`Đợt ${condition.batchCode} không tồn tại trong hệ thống`);
+      } else if (!batch.isConfirmed) {
+        warnings.push(`Cảnh báo: Đợt ${condition.batchCode} chưa được xác nhận lịch chính thức`);
+      }
+    }
+
+    // 3. Đơn giá và cọc
+    if (!condition.monthlyRent || condition.monthlyRent <= 0) {
+      blockingErrors.push('Đơn giá thuê hàng tháng phải lớn hơn 0');
+    } else {
+      if (condition.depositAmount !== condition.monthlyRent) {
+        warnings.push(`Cảnh báo quy tắc cọc: Tiền cọc dự kiến chuẩn bằng 1 tháng thuê (${condition.monthlyRent?.toLocaleString('vi-VN')} đ)`);
+      }
+    }
+
+    // 4. Kiểm tra hồ sơ khách nếu có
+    if (condition.tenantId) {
+      const tenant = tenants.find(t => t.id === condition.tenantId);
+      if (tenant && (tenant.isPreliminary || tenant.verificationStatus === 'Chưa xác minh')) {
+        warnings.push('Cảnh báo hồ sơ sơ bộ: Khách chưa đối chiếu giấy tờ nhân thân gốc. Bắt buộc đối chiếu trước bước ký 4.10 tại UC-HDT-04.');
+      }
+    }
+
+    const roomAvailable = blockingErrors.every(e => !e.includes('Phòng'));
+    const batchConfirmed = blockingErrors.every(e => !e.includes('Đợt'));
+    const isValid = blockingErrors.length === 0;
+
+    return {
+      isValid,
+      roomAvailable,
+      batchConfirmed,
+      blockingErrors,
+      warnings
+    };
+  };
+
+  const saveLeaseConditionHDT01 = (conditionData: Omit<LeaseConditionDraft, 'id' | 'createdAt' | 'createdBy' | 'updatedAt' | 'updatedBy' | 'version'> & { id?: string }) => {
+    const nowStr = new Date().toISOString();
+    const userName = currentUser?.fullName || 'Nguyễn Văn An (Chủ nhà)';
+
+    // Kiểm tra tính hợp lệ sơ bộ
+    const checkRes = checkLeaseConditionHDT01(conditionData);
+
+    let savedId = conditionData.id;
+    let savedVersion = 1;
+
+    setLeaseConditions(prev => {
+      const existingIdx = prev.findIndex(c => (conditionData.id && c.id === conditionData.id) || (conditionData.requestCode && c.requestCode === conditionData.requestCode));
+
+      if (existingIdx >= 0) {
+        const existing = prev[existingIdx];
+        savedId = existing.id;
+        savedVersion = existing.version + 1;
+
+        const changeDetails = `Cập nhật v${savedVersion}: Giá ${conditionData.monthlyRent.toLocaleString('vi-VN')} đ, Cọc ${conditionData.depositAmount.toLocaleString('vi-VN')} đ, Phòng ${conditionData.roomCode}, Đợt ${conditionData.batchCode}`;
+
+        const updatedHistory = [
+          ...(existing.history || []),
+          {
+            version: savedVersion,
+            timestamp: nowStr,
+            by: userName,
+            changes: changeDetails,
+            note: conditionData.termsNote
+          }
+        ];
+
+        const updated: LeaseConditionDraft = {
+          ...existing,
+          ...conditionData,
+          id: existing.id,
+          version: savedVersion,
+          updatedAt: nowStr,
+          updatedBy: userName,
+          checkResult: {
+            ...checkRes,
+            checkedAt: nowStr
+          },
+          history: updatedHistory
+        };
+
+        const copy = [...prev];
+        copy[existingIdx] = updated;
+        return copy;
+      } else {
+        savedId = 'COND-' + Date.now().toString().slice(-6);
+        savedVersion = 1;
+
+        const newCondition: LeaseConditionDraft = {
+          ...conditionData,
+          id: savedId,
+          version: 1,
+          status: conditionData.status || 'Đang trao đổi',
+          tenantAgreed44a1: conditionData.tenantAgreed44a1 || false,
+          createdAt: nowStr,
+          createdBy: userName,
+          updatedAt: nowStr,
+          updatedBy: userName,
+          paymentMethod: 'Chuyển khoản',
+          checkResult: {
+            ...checkRes,
+            checkedAt: nowStr
+          },
+          history: [
+            {
+              version: 1,
+              timestamp: nowStr,
+              by: userName,
+              changes: `Khởi tạo bộ điều kiện thuê theo yêu cầu ${conditionData.requestCode}`,
+              note: conditionData.termsNote
+            }
+          ]
+        };
+
+        return [newCondition, ...prev];
+      }
+    });
+
+    // Cập nhật versions sang receptionRequests nếu có
+    if (conditionData.requestCode) {
+      setReceptionRequests(prev => prev.map(r => {
+        if (r.requestCode === conditionData.requestCode) {
+          return {
+            ...r,
+            conditionsVersion: `v${savedVersion}.0 (Giá ${conditionData.monthlyRent.toLocaleString('vi-VN')} đ, cọc 1 tháng)`,
+            roomCode: conditionData.roomCode || r.roomCode
+          };
+        }
+        return r;
+      }));
+    }
+
+    logSecurity('LEASE_CONDITION_SAVED', `Lease condition ${savedId} v${savedVersion} saved for req ${conditionData.requestCode}`);
+    return {
+      success: true,
+      conditionId: savedId!,
+      version: savedVersion,
+      message: `Đã lưu bộ điều kiện thuê thành công (Phiên bản v${savedVersion})!`
+    };
+  };
+
+  const updateLeaseConditionStatusHDT01 = (requestCode: string, agreed: boolean, note?: string) => {
+    const nowStr = new Date().toISOString();
+    const userName = currentUser?.fullName || 'Nguyễn Văn An (Chủ nhà)';
+
+    setLeaseConditions(prev => prev.map(c => {
+      if (c.requestCode === requestCode) {
+        const nextStatus: LeaseConditionDraft['status'] = agreed ? 'Đã thống nhất' : 'Đang trao đổi';
+        const historyEntry = {
+          version: c.version,
+          timestamp: nowStr,
+          by: userName,
+          changes: agreed ? 'Khách đã đồng ý điều kiện thuê tại 4.4a1' : 'Khách yêu cầu điều chỉnh thêm điều kiện thuê',
+          note: note || (agreed ? 'Thống nhất điều kiện, sẵn sàng lập dự thảo HD-02' : 'Tiếp tục thương lượng')
+        };
+        return {
+          ...c,
+          tenantAgreed44a1: agreed,
+          status: nextStatus,
+          updatedAt: nowStr,
+          updatedBy: userName,
+          history: [...(c.history || []), historyEntry]
+        };
+      }
+      return c;
+    }));
+
+    logSecurity('LEASE_CONDITION_FEEDBACK', `Condition req ${requestCode} agreed: ${agreed}`);
+    return {
+      success: true,
+      message: agreed
+        ? 'Khách đã đồng ý điều kiện (4.4a1). Sẵn sàng chuyển sang Lập dự thảo hợp đồng (HDT-02)!'
+        : 'Đã cập nhật trạng thái: Đang tiếp tục trao đổi với khách.'
+    };
+  };
+
+  const cancelLeaseConditionHDT01 = (requestCode: string, reason: string) => {
+    const nowStr = new Date().toISOString();
+    const userName = currentUser?.fullName || 'Nguyễn Văn An (Chủ nhà)';
+
+    setLeaseConditions(prev => prev.map(c => {
+      if (c.requestCode === requestCode) {
+        return {
+          ...c,
+          status: 'Đã hủy',
+          updatedAt: nowStr,
+          updatedBy: userName,
+          history: [
+            ...(c.history || []),
+            {
+              version: c.version,
+              timestamp: nowStr,
+              by: userName,
+              changes: 'Hủy bộ điều kiện thuê',
+              note: reason
+            }
+          ]
+        };
+      }
+      return c;
+    }));
+
+    setReceptionRequests(prev => prev.map(r => {
+      if (r.requestCode === requestCode) {
+        return {
+          ...r,
+          status: 'Đã dừng',
+          linkHistory: [
+            ...(r.linkHistory || []),
+            {
+              timestamp: nowStr,
+              action: 'Dừng yêu cầu tiếp nhận',
+              by: userName,
+              note: `Lý do: ${reason}`
+            }
+          ]
+        };
+      }
+      return r;
+    }));
+
+    logSecurity('LEASE_CONDITION_CANCELLED', `Condition req ${requestCode} cancelled. Reason: ${reason}`);
+    return { success: true, message: 'Đã hủy bộ điều kiện thuê và dừng yêu cầu tiếp nhận.' };
+  };
+
+  // ==================== UC-HDT-02: LẬP DỰ THẢO HỢP ĐỒNG (4.5 → 4.8) ====================
   const createContractDraftHDT02 = (contractData: Omit<Contract, 'id' | 'status' | 'isSignedPaper' | 'version'>) => {
+    const nowStr = new Date().toISOString();
+    const userName = currentUser?.fullName || 'Nguyễn Văn An (Chủ nhà)';
+
+    // Kiểm tra tiền cọc = 1 tháng thuê (BR-HDT02-02)
+    if (contractData.depositAmount !== contractData.monthlyRent) {
+      contractData.depositAmount = contractData.monthlyRent;
+    }
+
+    // Sinh mã hợp đồng chuẩn: HD-[roomCode]-[Date]
     const contractId = 'HD-' + contractData.roomCode.replace(/\D/g, '') + '-' + Date.now().toString().slice(-4);
+    
+    // Sinh mã lần thuê chuẩn nếu chưa có: THUE-[roomCode]-L[n]
+    const existingRoomContracts = contracts.filter(c => c.roomCode === contractData.roomCode);
+    const leaseNumber = existingRoomContracts.length + 1;
+    const leaseId = contractData.leaseId || `THUE-${contractData.roomCode.replace(/\D/g, '')}-L${leaseNumber}`;
+
     const newContract: Contract = {
       ...contractData,
       id: contractId,
+      leaseId,
       status: 'Nháp',
       isSignedPaper: false,
-      version: 1
+      firstMonthRentAmount: contractData.monthlyRent, // 1 tháng tiền thuê
+      firstMonthRentPaid: contractData.firstMonthRentPaid || false,
+      paymentMethod: 'Chuyển khoản', // BR-HDT02-04
+      version: 1,
+      createdAt: nowStr,
+      createdBy: userName,
+      history: [
+        {
+          version: 1,
+          action: 'Lập dự thảo hợp đồng',
+          timestamp: nowStr,
+          by: userName,
+          note: `Khởi tạo hợp đồng nháp từ yêu cầu ${contractData.requestCode || 'trực tiếp'}`
+        }
+      ]
     };
-    setContracts(prev => [...prev, newContract]);
+
+    setContracts(prev => [newContract, ...prev]);
+
+    // Nếu từ requestCode, cập nhật trạng thái condition & reception
+    if (contractData.requestCode) {
+      setLeaseConditions(prev => prev.map(c => {
+        if (c.requestCode === contractData.requestCode) {
+          return {
+            ...c,
+            status: 'Đã tạo hợp đồng',
+            updatedAt: nowStr,
+            updatedBy: userName
+          };
+        }
+        return c;
+      }));
+
+      setReceptionRequests(prev => prev.map(r => {
+        if (r.requestCode === contractData.requestCode) {
+          return {
+            ...r,
+            status: 'Đã tạo hợp đồng',
+            linkHistory: [
+              ...(r.linkHistory || []),
+              {
+                timestamp: nowStr,
+                action: 'Tạo dự thảo hợp đồng (HDT-02)',
+                by: userName,
+                note: `Đã sinh hợp đồng dự thảo ${contractId}`
+              }
+            ]
+          };
+        }
+        return r;
+      }));
+    }
+
     logSecurity('CONTRACT_DRAFT_CREATED', `Contract draft ${contractId} created for room ${contractData.roomCode}`);
-    return { success: true, contractId, message: 'Lập hợp đồng dự thảo thành công!' };
+    return { success: true, contractId, message: `Lập hợp đồng dự thảo thành công! Mã hợp đồng: ${contractId}` };
   };
 
-  const confirmContractSignedHDT04 = (contractId: string, signedDate: string, proofFiles: string[]) => {
+  // ==================== UC-HDT-03: GỬI VÀ THEO DÕI KÝ (4.9 → 4.10) ====================
+  const updateContractDraftHDT03 = (contractId: string, updates: Partial<Contract>, changeNote: string) => {
+    const nowStr = new Date().toISOString();
+    const userName = currentUser?.fullName || 'Nguyễn Văn An (Chủ nhà)';
+
+    setContracts(prev => prev.map(c => {
+      if (c.id === contractId) {
+        const nextVersion = c.version + 1;
+        return {
+          ...c,
+          ...updates,
+          version: nextVersion,
+          history: [
+            ...(c.history || []),
+            {
+              version: nextVersion,
+              action: 'Điều chỉnh dự thảo hợp đồng (AF-01)',
+              timestamp: nowStr,
+              by: userName,
+              note: changeNote
+            }
+          ]
+        };
+      }
+      return c;
+    }));
+
+    logSecurity('CONTRACT_DRAFT_UPDATED', `Contract draft ${contractId} updated with note: ${changeNote}`);
+    return { success: true, message: 'Cập nhật nội dung dự thảo hợp đồng thành công!' };
+  };
+
+  const sendContractToTenantHDT03 = (contractId: string) => {
+    const nowStr = new Date().toISOString();
+    const userName = currentUser?.fullName || 'Nguyễn Văn An (Chủ nhà)';
+    const today = nowStr.split('T')[0];
+
+    setContracts(prev => prev.map(c => {
+      if (c.id === contractId) {
+        return {
+          ...c,
+          status: 'Chờ khách ký',
+          sentToTenantDate: today,
+          history: [
+            ...(c.history || []),
+            {
+              version: c.version,
+              action: 'Gửi dự thảo hợp đồng cho khách ký (4.9)',
+              timestamp: nowStr,
+              by: userName,
+              note: 'Đã xuất văn bản dự thảo và chuyển cho khách thuê xem xét, ký ngoài hệ thống'
+            }
+          ]
+        };
+      }
+      return c;
+    }));
+
+    logSecurity('CONTRACT_SENT_TO_TENANT', `Contract ${contractId} sent to tenant for signature`);
+    return { success: true, message: 'Đã chuyển hợp đồng sang trạng thái Chờ khách ký!' };
+  };
+
+  const cancelContractDraftHDT03 = (contractId: string, reason: string) => {
+    const nowStr = new Date().toISOString();
+    const userName = currentUser?.fullName || 'Nguyễn Văn An (Chủ nhà)';
+
+    setContracts(prev => prev.map(c => {
+      if (c.id === contractId) {
+        return {
+          ...c,
+          status: 'Đã hủy',
+          cancellationReason: reason,
+          cancelledAt: nowStr,
+          history: [
+            ...(c.history || []),
+            {
+              version: c.version,
+              action: 'Hủy dự thảo hợp đồng (AF-02)',
+              timestamp: nowStr,
+              by: userName,
+              note: `Lý do: ${reason}`
+            }
+          ]
+        };
+      }
+      return c;
+    }));
+
+    logSecurity('CONTRACT_DRAFT_CANCELLED', `Contract draft ${contractId} cancelled. Reason: ${reason}`);
+    return { success: true, message: 'Đã hủy dự thảo hợp đồng thành công!' };
+  };
+
+  // ==================== UC-HDT-04: TIẾP NHẬN & LƯU HỢP ĐỒNG ĐÃ KÝ (4.10 → 4.12) ====================
+  const confirmContractSignedHDT04 = (
+    contractId: string,
+    signedDate: string,
+    proofFiles: string[],
+    verifyInfo?: { idNumber: string; proof: string; confirmVerified: boolean }
+  ) => {
     const contract = contracts.find(c => c.id === contractId);
     if (!contract) return { success: false, message: 'Không tìm thấy hợp đồng.' };
+
+    const nowStr = new Date().toISOString();
+    const userName = currentUser?.fullName || 'Nguyễn Văn An (Chủ nhà)';
+
+    // Kiểm tra đối chiếu giấy tờ nhân thân khách theo ASIS-04 4.10
+    const tenant = tenants.find(t => t.id === contract.tenantId);
+    if (tenant && (tenant.isPreliminary || tenant.verificationStatus === 'Chưa xác minh')) {
+      if (!verifyInfo || !verifyInfo.confirmVerified) {
+        return {
+          success: false,
+          message: 'LỖI CHẶN KÝ (ASIS-04 bước 4.10): Khách thuê hiện là Hồ sơ sơ bộ / Chưa xác minh giấy tờ! Bắt buộc đối chiếu trực tiếp bản gốc CCCD/Hộ chiếu hợp lệ trước khi hoàn tất tiếp nhận hợp đồng đã ký.'
+        };
+      }
+
+      // Cập nhật trạng thái xác minh của khách thuê trong hồ sơ HSKT
+      setTenants(prev => prev.map(t => {
+        if (t.id === tenant.id) {
+          return {
+            ...t,
+            idNumber: verifyInfo.idNumber || t.idNumber,
+            paperStatus: 'Đã cung cấp',
+            verificationStatus: 'Đã xác minh hợp lệ',
+            isPreliminary: false,
+            preliminaryWarning: undefined,
+            arrivalVerificationEvidence: verifyInfo.proof || 'Đối chiếu trực tiếp tại văn phòng trước khi ký hợp đồng ASIS-04 4.10'
+          };
+        }
+        return t;
+      }));
+
+      // Ghi nhật ký vào tenantHistory
+      setTenantHistory(prev => [
+        {
+          id: 'LOG-HDT04-' + Date.now().toString().slice(-6),
+          tenantId: tenant.id,
+          action: 'Đối chiếu giấy tờ nhân thân trước ký (ASIS-04 4.10)',
+          timestamp: nowStr,
+          performedBy: userName,
+          oldValues: 'Chưa xác minh / Hồ sơ sơ bộ',
+          newValues: `Đã xác minh hợp lệ (CCCD: ${verifyInfo.idNumber})`,
+          relatedContractId: contractId,
+          evidence: verifyInfo.proof,
+          sourceModule: 'HDT-04'
+        },
+        ...prev
+      ]);
+    }
 
     const startDate = new Date(contract.startDate);
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const hasEffective = now >= startDate;
+    const finalStatus: Contract['status'] = hasEffective ? 'Hiệu lực' : 'Chờ hiệu lực';
 
-    setContracts(prev => prev.map(c => c.id === contractId ? {
-      ...c,
-      status: hasEffective ? 'Hiệu lực' : 'Chờ hiệu lực',
-      isSignedPaper: true,
-      signedDate,
-      signedProofFiles: proofFiles
-    } : c));
+    setContracts(prev => prev.map(c => {
+      if (c.id === contractId) {
+        return {
+          ...c,
+          status: finalStatus,
+          isSignedPaper: true,
+          signedDate,
+          signedProofFiles: proofFiles,
+          verifiedTenantProof: verifyInfo?.proof,
+          verifiedTenantIdNumber: verifyInfo?.idNumber,
+          tenantVerificationConfirmed: true,
+          history: [
+            ...(c.history || []),
+            {
+              version: c.version,
+              action: 'Tiếp nhận và lưu hợp đồng đã ký (4.10 → 4.12)',
+              timestamp: nowStr,
+              by: userName,
+              note: `Đã đối chiếu chữ ký 2 bên và giấy tờ nhân thân. Trạng thái: ${finalStatus}`
+            }
+          ]
+        };
+      }
+      return c;
+    }));
+
+    // Cập nhật trạng thái phòng
+    setRooms(prev => prev.map(r => {
+      if (r.roomCode === contract.roomCode) {
+        return {
+          ...r,
+          status: hasEffective ? 'Đang thuê' : 'Đang thuê', // Phòng đã được khóa theo hợp đồng
+          currentTenant: contract.tenantName
+        };
+      }
+      return r;
+    }));
 
     logSecurity('CONTRACT_SIGNED_HDT04', `Contract ${contractId} signed. Effective: ${hasEffective}`);
-    return { success: true, message: 'Ghi nhận hợp đồng đã ký thành công!' };
+    return {
+      success: true,
+      message: `Ghi nhận hợp đồng đã ký thành công! Trạng thái hợp đồng: ${finalStatus}. Phòng ${contract.roomCode} đã được cập nhật.`
+    };
   };
 
+  // ==================== UC-HDT-06: LẬP HỢP ĐỒNG NỐI TIẾP (4.14) ====================
   const createRenewalContractHDT06 = (params: {
     previousContractId: string;
     roomCode: string;
@@ -2419,11 +2954,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const prevContract = contracts.find(c => c.id === params.previousContractId);
     if (!prevContract) return { success: false, message: 'Không tìm thấy hợp đồng cũ.' };
 
+    const nowStr = new Date().toISOString();
+    const userName = currentUser?.fullName || 'Nguyễn Văn An (Chủ nhà)';
+
     const newId = 'HD-' + params.roomCode.replace(/\D/g, '') + '-GIAHAN-' + Date.now().toString().slice(-4);
     const renewalContract: Contract = {
       id: newId,
       contractType: 'Hợp đồng nối tiếp',
-      leaseId: prevContract.leaseId, // Cùng chuỗi lần thuê
+      leaseId: prevContract.leaseId, // Cùng chuỗi lần thuê (kế thừa)
       roomCode: params.roomCode,
       tenantId: params.tenantId,
       tenantName: params.tenantName,
@@ -2431,33 +2969,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       startDate: params.startDate,
       endDate: params.endDate,
       monthlyRent: params.monthlyRent,
-      depositAmount: prevContract.depositAmount, // Kế thừa cọc gốc
+      depositAmount: prevContract.depositAmount, // Kế thừa cọc gốc (không thu cọc mới)
       firstMonthRentAmount: params.monthlyRent,
-      firstMonthRentPaid: true, // Không thu lại cọc hay tiền thuê kỳ đầu
+      firstMonthRentPaid: true, // Kế thừa chuỗi thanh toán định kỳ
       paymentMethod: 'Chuyển khoản',
       terms: params.terms,
       status: 'Nháp',
       isSignedPaper: false,
       previousContractId: prevContract.id,
-      initialDepositCode: prevContract.initialDepositCode || 'COC-' + params.roomCode,
-      version: 1
+      initialDepositCode: prevContract.initialDepositCode || 'COC-' + params.roomCode + '-L1',
+      version: 1,
+      createdAt: nowStr,
+      createdBy: userName,
+      history: [
+        {
+          version: 1,
+          action: 'Lập hợp đồng nối tiếp (HDT-06)',
+          timestamp: nowStr,
+          by: userName,
+          note: `Kế thừa lần thuê ${prevContract.leaseId} và khoản cọc gốc ${prevContract.depositAmount.toLocaleString('vi-VN')} đ từ hợp đồng ${prevContract.id}`
+        }
+      ]
     };
 
-    setContracts(prev => [...prev, renewalContract]);
+    setContracts(prev => [renewalContract, ...prev]);
     logSecurity('RENEWAL_CONTRACT_CREATED', `Renewal contract ${newId} created for room ${params.roomCode}`);
-    return { success: true, contractId: newId, message: 'Lập hợp đồng nối tiếp thành công (kế thừa cọc gốc)!' };
+    return {
+      success: true,
+      contractId: newId,
+      message: `Lập hợp đồng nối tiếp thành công (Mã: ${newId})! Khoản tiền cọc ${prevContract.depositAmount.toLocaleString('vi-VN')} đ được kế thừa trọn vẹn.`
+    };
   };
 
+  // ==================== UC-HDT-07: KÍCH HOẠT HỢP ĐỒNG GIA HẠN (4.15) ====================
   const activateRenewalContractHDT07 = (contractId: string, signedDate: string, proofFiles: string[]) => {
     const contract = contracts.find(c => c.id === contractId);
     if (!contract || !contract.previousContractId) {
-      return { success: false, message: 'Hợp đồng không hợp lệ.' };
+      return { success: false, message: 'Hợp đồng gia hạn không hợp lệ hoặc thiếu liên kết hợp đồng cũ.' };
     }
 
-    // Terminate old contract
+    const nowStr = new Date().toISOString();
+    const userName = currentUser?.fullName || 'Nguyễn Văn An (Chủ nhà)';
+
+    // Terminate old contract and activate renewal
     setContracts(prev => prev.map(c => {
       if (c.id === contract.previousContractId) {
-        return { ...c, status: 'Kết thúc' };
+        return {
+          ...c,
+          status: 'Kết thúc',
+          history: [
+            ...(c.history || []),
+            {
+              version: c.version,
+              action: 'Kết thúc hợp đồng (đã chuyển tiếp hợp đồng nối tiếp)',
+              timestamp: nowStr,
+              by: userName,
+              note: `Hợp đồng nối tiếp ${contractId} đã được kích hoạt hiệu lực`
+            }
+          ]
+        };
       }
       if (c.id === contractId) {
         return {
@@ -2465,7 +3035,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           status: 'Hiệu lực',
           isSignedPaper: true,
           signedDate,
-          signedProofFiles: proofFiles
+          signedProofFiles: proofFiles,
+          history: [
+            ...(c.history || []),
+            {
+              version: c.version,
+              action: 'Kích hoạt hiệu lực hợp đồng nối tiếp (HDT-07)',
+              timestamp: nowStr,
+              by: userName,
+              note: 'Đã hoàn tất ký bản giấy và kích hoạt hiệu lực tiếp tục thuê'
+            }
+          ]
         };
       }
       return c;
@@ -2477,11 +3057,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'Đang thuê',
       expectedReturnDate: undefined,
       returnPlanCancelled: true,
-      returnPlanCancelReason: 'Đã hủy do gia hạn'
+      returnPlanCancelReason: 'Đã hủy do kích hoạt hợp đồng nối tiếp'
     } : r));
 
     logSecurity('RENEWAL_ACTIVATED_HDT07', `Renewal contract ${contractId} activated. Old contract closed, return plan cancelled.`);
-    return { success: true, message: 'Kích hoạt hợp đồng nối tiếp thành công! Kế hoạch trả cũ đã tự hủy do gia hạn.' };
+    return {
+      success: true,
+      message: 'Kích hoạt hợp đồng nối tiếp thành công! Hợp đồng cũ đã kết thúc, kế hoạch trả cũ tự động hủy theo BR-UC.PH.14-01.'
+    };
   };
 
   // ==================== DEPOSIT SETTLEMENT (QT05) ====================
@@ -3251,10 +3834,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       recordPreSignVerificationHSKT03,
       applyTenantUpdateHSKT04,
 
+      leaseConditions,
+      saveLeaseConditionHDT01,
+      checkLeaseConditionHDT01,
+      updateLeaseConditionStatusHDT01,
+      cancelLeaseConditionHDT01,
+
       contracts,
       batchSchedules,
       addBatchSchedule,
+      updateBatchScheduleHDT05,
       createContractDraftHDT02,
+      updateContractDraftHDT03,
+      sendContractToTenantHDT03,
+      cancelContractDraftHDT03,
       confirmContractSignedHDT04,
       createRenewalContractHDT06,
       activateRenewalContractHDT07,

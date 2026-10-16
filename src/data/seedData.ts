@@ -574,6 +574,137 @@ export const INITIAL_RECEPTION_REQUESTS: ReceptionRequest[] = [
   }
 ];
 
+export const INITIAL_LEASE_CONDITIONS: LeaseConditionDraft[] = [
+  {
+    id: 'COND-2026-001',
+    requestCode: 'YCTN-2026-001',
+    tenantId: 'ten_10',
+    prospectiveTenantName: 'Nguyễn Quang Khải',
+    prospectivePhone: '0988776655',
+    prospectiveIdNumber: '001099014562',
+    roomCode: 'P.303',
+    batchCode: 'DOT-2026-K10',
+    startDate: '2026-10-18',
+    endDate: '2027-04-18',
+    monthlyRent: 3700000,
+    depositAmount: 3700000,
+    billingCycle: 'Ngày 25-30 hàng tháng',
+    paymentMethod: 'Chuyển khoản',
+    termsNote: 'Căn hộ mini ban công, có nội thất cơ bản, giữ gìn vệ sinh chung.',
+    tenantAgreed44a1: true,
+    status: 'Đã tạo hợp đồng',
+    version: 1,
+    createdAt: '2026-10-14T08:45:00Z',
+    createdBy: 'Nguyễn Văn An (Chủ nhà)',
+    updatedAt: '2026-10-14T09:30:00Z',
+    updatedBy: 'Nguyễn Văn An (Chủ nhà)',
+    checkResult: {
+      isValid: true,
+      roomAvailable: true,
+      batchConfirmed: true,
+      blockingErrors: [],
+      warnings: ['Khách đang dùng giấy tờ đối chiếu tạm thời (HSKT-01)'],
+      checkedAt: '2026-10-14T09:20:00Z'
+    },
+    history: [
+      {
+        version: 1,
+        timestamp: '2026-10-14T08:45:00Z',
+        by: 'Nguyễn Văn An (Chủ nhà)',
+        changes: 'Khởi tạo bộ điều kiện thuê ban đầu theo yêu cầu YCTN-2026-001',
+        note: 'Đơn giá 3.7tr/tháng, cọc 3.7tr'
+      }
+    ]
+  },
+  {
+    id: 'COND-2026-002',
+    requestCode: 'YCTN-2026-002',
+    prospectiveTenantName: 'Vũ Đình Toàn',
+    prospectivePhone: '0915667788',
+    prospectiveIdNumber: '030095001234',
+    roomCode: 'P.103',
+    batchCode: 'DOT-2026-K10',
+    startDate: '2026-10-20',
+    endDate: '2027-04-20',
+    monthlyRent: 3200000,
+    depositAmount: 3200000,
+    billingCycle: 'Ngày 25-30 hàng tháng',
+    paymentMethod: 'Chuyển khoản',
+    termsNote: 'Căn hộ tầng 1, không nuôi thú cưng lớn.',
+    tenantAgreed44a1: false,
+    status: 'Đang trao đổi',
+    version: 2,
+    createdAt: '2026-10-15T14:10:00Z',
+    createdBy: 'Nguyễn Văn An (Chủ nhà)',
+    updatedAt: '2026-10-15T16:00:00Z',
+    updatedBy: 'Nguyễn Văn An (Chủ nhà)',
+    checkResult: {
+      isValid: true,
+      roomAvailable: true,
+      batchConfirmed: true,
+      blockingErrors: [],
+      warnings: ['Phòng P.103 đang kiểm kê chuẩn bị bàn giao (BG-01)'],
+      checkedAt: '2026-10-15T15:50:00Z'
+    },
+    history: [
+      {
+        version: 1,
+        timestamp: '2026-10-15T14:10:00Z',
+        by: 'Nguyễn Văn An (Chủ nhà)',
+        changes: 'Khởi tạo điều kiện thuê: Giá 3.5tr/tháng',
+        note: 'Khách đề nghị giảm giá'
+      },
+      {
+        version: 2,
+        timestamp: '2026-10-15T16:00:00Z',
+        by: 'Nguyễn Văn An (Chủ nhà)',
+        changes: 'Điều chỉnh đơn giá: 3.500.000 đ → 3.200.000 đ; Cọc: 3.200.000 đ',
+        note: 'Đã cập nhật theo yêu cầu khách, chờ phản hồi chính thức'
+      }
+    ]
+  },
+  {
+    id: 'COND-2026-003',
+    requestCode: 'YCTN-2026-003',
+    prospectiveTenantName: 'Đoàn Minh Nhật',
+    prospectivePhone: '0944556677',
+    prospectiveIdNumber: '025098007766',
+    roomCode: 'P.202',
+    batchCode: 'DOT-2026-K11',
+    startDate: '2026-11-01',
+    endDate: '2027-05-01',
+    monthlyRent: 3600000,
+    depositAmount: 3600000,
+    billingCycle: 'Ngày 25-30 hàng tháng',
+    paymentMethod: 'Chuyển khoản',
+    termsNote: 'Thuê 6 tháng, thanh toán chuyển khoản định kỳ.',
+    tenantAgreed44a1: true,
+    status: 'Đã thống nhất',
+    version: 1,
+    createdAt: '2026-10-16T09:15:00Z',
+    createdBy: 'Nguyễn Văn An (Chủ nhà)',
+    updatedAt: '2026-10-16T09:40:00Z',
+    updatedBy: 'Nguyễn Văn An (Chủ nhà)',
+    checkResult: {
+      isValid: true,
+      roomAvailable: true,
+      batchConfirmed: true,
+      blockingErrors: [],
+      warnings: [],
+      checkedAt: '2026-10-16T09:35:00Z'
+    },
+    history: [
+      {
+        version: 1,
+        timestamp: '2026-10-16T09:15:00Z',
+        by: 'Nguyễn Văn An (Chủ nhà)',
+        changes: 'Khởi tạo điều kiện và khách đã thống nhất tại 4.4a1',
+        note: 'Sẵn sàng lập dự thảo hợp đồng (HDT-02)'
+      }
+    ]
+  }
+];
+
 export const INITIAL_TENANT_PROPOSALS: TenantChangeProposal[] = [
   {
     id: 'BDL-2026-001',
@@ -795,6 +926,80 @@ export const INITIAL_CONTRACTS: Contract[] = [
     isSignedPaper: true,
     initialDepositCode: 'COC-303-L1',
     version: 1
+  },
+  {
+    id: 'HD-202-NHAP',
+    contractType: 'Hợp đồng lần đầu',
+    requestCode: 'YCTN-2026-003',
+    leaseId: 'THUE-202-L2',
+    roomCode: 'P.202',
+    tenantId: 'ten_03',
+    tenantName: 'Đoàn Minh Nhật',
+    tenantPhone: '0944556677',
+    batchCode: 'DOT-2026-K11',
+    startDate: '2026-11-01',
+    endDate: '2027-05-01',
+    monthlyRent: 3600000,
+    depositAmount: 3600000,
+    firstMonthRentAmount: 3600000,
+    firstMonthRentPaid: false,
+    paymentMethod: 'Chuyển khoản',
+    terms: 'Hợp đồng dự thảo theo đợt DOT-2026-K11, thanh toán chuyển khoản định kỳ.',
+    status: 'Nháp',
+    isSignedPaper: false,
+    version: 1,
+    createdAt: '2026-10-16T10:00:00Z',
+    createdBy: 'Nguyễn Văn An (Chủ nhà)'
+  },
+  {
+    id: 'HD-103-KY',
+    contractType: 'Hợp đồng lần đầu',
+    requestCode: 'YCTN-2026-002',
+    leaseId: 'THUE-103-L1',
+    roomCode: 'P.103',
+    tenantId: 'ten_10',
+    tenantName: 'Vũ Đình Toàn',
+    tenantPhone: '0915667788',
+    batchCode: 'DOT-2026-K10',
+    startDate: '2026-10-20',
+    endDate: '2027-04-20',
+    monthlyRent: 3200000,
+    depositAmount: 3200000,
+    firstMonthRentAmount: 3200000,
+    firstMonthRentPaid: false,
+    paymentMethod: 'Chuyển khoản',
+    terms: 'Hợp đồng thuê căn hộ mini P.103, thanh toán chuyển khoản ngày 25-30 hàng tháng.',
+    status: 'Chờ khách ký',
+    isSignedPaper: false,
+    sentToTenantDate: '2026-10-15',
+    version: 1,
+    createdAt: '2026-10-15T16:30:00Z',
+    createdBy: 'Nguyễn Văn An (Chủ nhà)'
+  },
+  {
+    id: 'HD-102-GIAHAN',
+    contractType: 'Hợp đồng nối tiếp',
+    leaseId: 'THUE-102-L1',
+    roomCode: 'P.102',
+    tenantId: 'ten_02',
+    tenantName: 'Lê Thị Cúc',
+    tenantPhone: '0912345678',
+    batchCode: 'DOT-2026-K11',
+    startDate: '2026-11-01',
+    endDate: '2027-05-01',
+    monthlyRent: 3900000,
+    depositAmount: 3800000, // Kế thừa cọc gốc 3.8tr
+    firstMonthRentAmount: 3900000,
+    firstMonthRentPaid: true,
+    paymentMethod: 'Chuyển khoản',
+    terms: 'Hợp đồng gia hạn nối tiếp tiếp tục thuê P.102, kế thừa khoản cọc gốc ban đầu.',
+    status: 'Nháp',
+    isSignedPaper: false,
+    previousContractId: 'HD-102-2026',
+    initialDepositCode: 'COC-102-L1',
+    version: 1,
+    createdAt: '2026-10-16T08:00:00Z',
+    createdBy: 'Nguyễn Văn An (Chủ nhà)'
   }
 ];
 

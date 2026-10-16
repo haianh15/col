@@ -588,41 +588,67 @@ export interface ReceptionRequest {
   }[];
 }
 
-// ==================== QUY TRÌNH 04: HỢP ĐỒNG THUÊ ====================
+// ==================== QUY TRÌNH 04: HỢP ĐỒNG THUÊ (ASIS-04) ====================
 export interface BatchSchedule {
   batchCode: string;
   startDate: string;
   endDate: string;
   billingCycleNote: string;
   isConfirmed: boolean;
+  status?: 'Đang áp dụng' | 'Đã đóng' | 'Kế hoạch';
+  note?: string;
 }
 
 export interface LeaseConditionDraft {
-  id: string;
-  requestCode: string; // Mã yêu cầu tiếp nhận duy nhất
-  tenantId?: string;
-  roomCode: string;
-  batchCode: string;
+  id: string; // Mã điều kiện: COND-xxxx
+  requestCode: string; // Mã yêu cầu tiếp nhận duy nhất (YCTN-xxxx)
+  tenantId?: string; // Mã hồ sơ khách nếu đã liên kết
+  prospectiveTenantName?: string;
+  prospectivePhone?: string;
+  prospectiveIdNumber?: string;
+  roomCode: string; // Phòng dự kiến
+  batchCode: string; // Đợt hợp đồng chung
   startDate: string;
   endDate: string;
-  monthlyRent: number;
-  depositAmount: number; // Luôn = 1 tháng thuê
-  billingCycle: string;
-  paymentMethod: 'Chuyển khoản';
-  termsNote: string;
-  tenantAgreed44a1: boolean;
-  version: number;
+  monthlyRent: number; // Giá thuê / tháng
+  depositAmount: number; // Cọc dự kiến = 1 tháng thuê
+  billingCycle: string; // Chu kỳ thu (ngày 25-30 hàng tháng)
+  paymentMethod: 'Chuyển khoản'; // Cố định chỉ đọc
+  termsNote: string; // Điều khoản bổ sung
+  tenantAgreed44a1: boolean; // Khách đã đồng ý điều kiện tại bước 4.4a1
+  status: 'Đang trao đổi' | 'Đã thống nhất' | 'Đã tạo hợp đồng' | 'Đã hủy';
+  version: number; // Phiên bản v1, v2...
+  createdAt: string;
+  createdBy: string;
   updatedAt: string;
+  updatedBy: string;
+  checkResult?: {
+    isValid: boolean;
+    roomAvailable: boolean;
+    batchConfirmed: boolean;
+    blockingErrors: string[];
+    warnings: string[];
+    checkedAt: string;
+  };
+  history?: {
+    version: number;
+    timestamp: string;
+    by: string;
+    changes: string;
+    note?: string;
+  }[];
 }
 
 export interface Contract {
-  id: string; // Mã hợp đồng
+  id: string; // Mã hợp đồng: HD-xxxx
   contractType: 'Hợp đồng lần đầu' | 'Hợp đồng nối tiếp';
-  requestCode?: string;
-  leaseId: string; // Mã lần thuê
+  requestCode?: string; // Mã YCTN tham chiếu
+  leaseId: string; // Mã lần thuê: THUE-xxx-Ln (kế thừa ở hợp đồng nối tiếp)
   roomCode: string;
   tenantId: string;
   tenantName: string;
+  tenantPhone?: string;
+  tenantIdNumber?: string;
   batchCode: string;
   startDate: string;
   endDate: string;
@@ -634,12 +660,28 @@ export interface Contract {
   firstMonthRentPaid: boolean;
   paymentMethod: 'Chuyển khoản';
   terms: string;
-  status: 'Nháp' | 'Đã ký' | 'Chờ hiệu lực' | 'Hiệu lực' | 'Kết thúc';
+  status: 'Nháp' | 'Chờ khách ký' | 'Đã ký' | 'Chờ hiệu lực' | 'Hiệu lực' | 'Kết thúc' | 'Đã hủy';
   isSignedPaper: boolean;
   signedProofFiles?: string[];
+  // Ràng buộc đối chiếu giấy tờ nhân thân trước khi ký (ASIS-04 4.10)
+  verifiedTenantProof?: string;
+  verifiedTenantIdNumber?: string;
+  tenantVerificationConfirmed?: boolean;
   previousContractId?: string; // Hợp đồng cũ đối với hợp đồng nối tiếp
-  initialDepositCode?: string; // Mã cọc gốc từ hợp đồng đầu
+  initialDepositCode?: string; // Mã cọc gốc từ hợp đồng đầu (kế thừa)
   version: number;
+  sentToTenantDate?: string;
+  createdAt?: string;
+  createdBy?: string;
+  cancellationReason?: string;
+  cancelledAt?: string;
+  history?: {
+    version: number;
+    action: string;
+    timestamp: string;
+    by: string;
+    note?: string;
+  }[];
 }
 
 // ==================== QUY TRÌNH 05: QUYẾT TOÁN CỌC ====================
